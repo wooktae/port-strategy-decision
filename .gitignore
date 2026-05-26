@@ -1,0 +1,24 @@
+﻿__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.env.*
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Local outputs / dumps
+*.csv
+*.xlsx
+*.parquet
+*.pkl
+*.pickle
+*.dump
+*.tmp
+
+# Local test / scratch files
+test*.py
+debug_*.py
