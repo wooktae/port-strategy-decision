@@ -94,12 +94,22 @@ DB 접속 환경변수:
 ```powershell
 $env:INTEREST_DB_HOST="localhost"
 $env:INTEREST_DB_PORT="5433"
-$env:INTEREST_DB_NAME="interest_crawler"
+$env:INTEREST_DB_NAME="portfolio"
 $env:INTEREST_DB_USER="postgres"
 $env:INTEREST_DB_PASSWORD="[REDACTED]"
 ```
 
-`INTEREST_DB_PASSWORD`는 기본값이 없으며 비어 있으면 실행 시 `RuntimeError`가 발생한다. 나머지 값은 위 예시 값이 기본값이다.
+`INTEREST_DB_NAME`의 기본 DB명은 `portfolio`다. 이 모듈에서는 현재 `INTEREST_DB_*` 환경변수를 사용하며, 같은 포트폴리오 시스템 내에서 `PORTFOLIO_DB_NAME` 계열 이름을 병행해 설명하는 경우에도 기본 DB명은 `portfolio`로 맞춘다. `INTEREST_DB_PASSWORD`는 기본값이 없으며 비어 있으면 실행 시 `RuntimeError`가 발생한다. 나머지 값은 위 예시 값이 기본값이다.
+
+로컬 PostgreSQL은 AWS Migration 준비 관점에서 단일 DB `portfolio` 안에 domain별 schema를 나누는 구조를 사용한다. 이 모듈의 DB connection `search_path`는 다음 순서를 기준으로 한다.
+
+```text
+decision, research, preprocessor, execution, connector, reference, legacy, public
+```
+
+`public`에 있던 테이블은 domain schema로 이동되었지만, 기존 SQL은 schema-qualified table name을 강제하지 않고 위 `search_path` 기반으로 계속 동작하도록 유지한다. Daily BUY Signal은 `strategy_block_watch_candidate`를 사용하므로 `research` schema가 `search_path`에 포함되어야 한다.
+
+민감정보는 환경변수 또는 로컬 운영 설정으로 관리한다. 문서에는 실제 password, token, account, webhook URL 값을 쓰지 않고 필요한 경우 `[REDACTED]`로 마스킹한다.
 
 ## 외부 의존성
 

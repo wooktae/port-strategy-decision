@@ -9,7 +9,8 @@ def get_db_config():
     return {
         "host": os.environ.get("INTEREST_DB_HOST") or "localhost",
         "port": int(os.environ.get("INTEREST_DB_PORT") or "5433"),
-        "dbname": os.environ.get("INTEREST_DB_NAME") or "interest_crawler",
+        "dbname": os.environ.get("INTEREST_DB_NAME") or "portfolio",
         "user": os.environ.get("INTEREST_DB_USER") or "postgres",
         "password": password,
+        "options": "-c search_path=decision,research,preprocessor,execution,connector,reference,legacy,public",
     }

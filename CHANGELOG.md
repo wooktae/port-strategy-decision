@@ -6,6 +6,9 @@
 
 - DB 접속 설정을 로컬 `db_config.py`의 `get_db_config()`로 외부화하고 `INTEREST_DB_*` 환경변수 기반으로 정리했다.
 - password 하드코딩 후보를 제거하고 `INTEREST_DB_PASSWORD` 필수 검증으로 변경했다.
+- 로컬 PostgreSQL 기본 DB명을 `interest_crawler`에서 `portfolio`로 변경한 내용을 문서에 반영했다.
+- AWS Migration 준비 관점의 단일 DB `portfolio` + schema-per-domain 구조와 decision 모듈 `search_path`를 문서화했다.
+- schema-per-domain 전환 후에도 기존 SQL은 `search_path` 기반으로 동작한다는 설명을 추가했다.
 
 ### Notes
 
