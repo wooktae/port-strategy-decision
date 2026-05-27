@@ -1,15 +1,16 @@
 import psycopg2
 import psycopg2.extras
 
-from port_strategy_common.config import DB_CONFIG, DECISION_RUN_DATE
+from port_strategy_common.config import DECISION_RUN_DATE
 from port_strategy_decision.backtest_market import evaluate_market
 from port_strategy_decision.backtest_filter import filter_buy_candidates
 from port_strategy_decision.backtest_sizing import allocate_positions
+from port_strategy_decision.db_config import get_db_config
 from port_strategy_common.run_store import create_run, ensure_run_tables
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def load_market(conn, date):

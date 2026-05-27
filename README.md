@@ -45,7 +45,9 @@
 이 저장소는 판단 핵심 로직 상당 부분을 `port_strategy_common`에서 가져온다.
 
 - `port_strategy_common.config`
-  - `DB_CONFIG`, `STRATEGY_NAME`, `ENGINE_VERSION`, `MARKET_CONFIG`, `FILTER_CONFIG`, `SIZING_CONFIG`, `DECISION_RUN_DATE`, `get_config_snapshot`을 참조한다.
+  - `STRATEGY_NAME`, `ENGINE_VERSION`, `MARKET_CONFIG`, `FILTER_CONFIG`, `SIZING_CONFIG`, `DECISION_RUN_DATE`, `get_config_snapshot`을 참조한다.
+- `db_config.py`
+  - 이 MS의 DB 접속 설정은 `INTEREST_DB_*` 환경변수에서 읽는다.
 - market decision
   - `backtest_market.py`가 `CommonMarketContext`를 만들고 `common_decide_market`을 호출한다.
 - buy filter
@@ -76,7 +78,7 @@ python daily_validator.py
 
 ## 설정 방법
 
-설정은 주로 `port_strategy_common.config`에서 가져온다. 민감정보는 코드, 문서, 로그, 예시 출력에 기록하지 않는다. 필요한 값은 환경변수 또는 local config로 분리하고 문서에는 `[REDACTED]`로 마스킹한다.
+설정은 주로 `port_strategy_common.config`와 로컬 `db_config.py`에서 가져온다. 민감정보는 코드, 문서, 로그, 예시 출력에 기록하지 않는다. 필요한 값은 환경변수 또는 local config로 분리하고 문서에는 `[REDACTED]`로 마스킹한다.
 
 주요 설정 유형:
 
@@ -86,6 +88,18 @@ python daily_validator.py
 - decision run date
 - feature 입력 테이블과 strategy 출력 테이블의 스키마 계약
 - 계좌 필터 또는 broker position snapshot 조회 조건
+
+DB 접속 환경변수:
+
+```powershell
+$env:INTEREST_DB_HOST="localhost"
+$env:INTEREST_DB_PORT="5433"
+$env:INTEREST_DB_NAME="interest_crawler"
+$env:INTEREST_DB_USER="postgres"
+$env:INTEREST_DB_PASSWORD="[REDACTED]"
+```
+
+`INTEREST_DB_PASSWORD`는 기본값이 없으며 비어 있으면 실행 시 `RuntimeError`가 발생한다. 나머지 값은 위 예시 값이 기본값이다.
 
 ## 외부 의존성
 

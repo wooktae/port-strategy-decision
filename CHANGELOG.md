@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-05-27
+
+### Changed
+
+- DB 접속 설정을 로컬 `db_config.py`의 `get_db_config()`로 외부화하고 `INTEREST_DB_*` 환경변수 기반으로 정리했다.
+- password 하드코딩 후보를 제거하고 `INTEREST_DB_PASSWORD` 필수 검증으로 변경했다.
+
+### Notes
+
+- 실제 DB 접속, daily signal 실행, backtest/research 실행, execution order 생성, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
+- 민감정보 값은 문서에 기록하지 않았다.
+
 ## 2026-05-26
 
 ### Added

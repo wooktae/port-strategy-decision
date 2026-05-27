@@ -3,10 +3,10 @@ import traceback
 
 import psycopg2
 
-from port_strategy_common.config import DB_CONFIG
 from port_strategy_decision.backtest_market import evaluate_market
 from port_strategy_decision.backtest_filter import filter_buy_candidates
 from port_strategy_decision.backtest_sizing import allocate_positions
+from port_strategy_decision.db_config import get_db_config
 from port_strategy_decision.daily_feature_loader import load_daily_features
 from port_strategy_decision.daily_repository import (
     create_or_replace_daily_run,
@@ -32,7 +32,7 @@ from port_strategy_decision.daily_block_watch_repository import (
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 def _to_common_market_decision(decision) -> CommonMarketDecision:
     return CommonMarketDecision(

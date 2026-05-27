@@ -2,7 +2,7 @@ import argparse
 
 import psycopg2
 
-from port_strategy_common.config import DB_CONFIG
+from port_strategy_decision.db_config import get_db_config
 from port_strategy_decision.daily_repository import (
     get_latest_daily_run,
     get_daily_signals,
@@ -10,7 +10,7 @@ from port_strategy_decision.daily_repository import (
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def print_daily_run(run):

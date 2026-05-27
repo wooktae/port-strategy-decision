@@ -6,14 +6,15 @@ from typing import Any, Optional
 
 import psycopg2.extras
 
-from port_strategy_common.config import DB_CONFIG, STRATEGY_NAME, ENGINE_VERSION
+from port_strategy_common.config import STRATEGY_NAME, ENGINE_VERSION
+from port_strategy_decision.db_config import get_db_config
 
 
 ACTIVE_POSITION_STATUSES = ("OPEN", "SELL_READY", "SELL_ORDERED")
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_db_config())
 
 
 def json_default(value: Any):
