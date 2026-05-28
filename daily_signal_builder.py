@@ -1,3 +1,9 @@
+"""daily BUY signal row를 구성하는 builder 모듈.
+
+sizing 결과와 stock feature를 `strategy_daily_signal` 저장 형식으로 변환한다.
+DB 저장은 repository가 담당하며, status/reason 문자열 계약을 변경하지 않는다.
+"""
+
 from decimal import Decimal
 from typing import Any
 
@@ -88,6 +94,7 @@ def build_daily_signals(
     positions: list[dict],
     stock_rows: list[dict],
 ):
+    """sizing position 목록을 `strategy_daily_signal` upsert 입력 목록으로 변환한다."""
     stock_map = {
         row["ticker_code"]: row
         for row in stock_rows

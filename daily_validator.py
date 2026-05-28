@@ -1,3 +1,9 @@
+"""최신 daily buy signal 실행 결과를 조회해 출력하는 검증 entrypoint.
+
+`strategy_daily_run`과 `strategy_daily_signal`을 DB에서 읽어 콘솔에 표시한다.
+쓰기 작업은 없지만 운영 데이터와 민감정보 노출 가능성이 있으므로 실행 전 확인이 필요하다.
+"""
+
 import argparse
 
 import psycopg2
@@ -64,6 +70,7 @@ def print_daily_signals(signals):
 
 
 def validate_latest_daily_run():
+    """최신 daily run과 연결된 BUY signal 목록을 조회해 출력한다."""
     conn = get_conn()
 
     try:

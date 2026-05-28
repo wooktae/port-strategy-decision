@@ -1,3 +1,9 @@
+"""BLOCK watch 후보 저장 repository 모듈.
+
+`strategy_block_watch_candidate`에 관찰 후보를 upsert/delete한다.
+BUY signal 또는 execution order를 생성하지 않으며, 호출자가 전달한 DB transaction 안에서 동작한다.
+"""
+
 from __future__ import annotations
 
 import json
@@ -138,4 +144,3 @@ def delete_block_watch_candidates(conn, daily_run_id: int) -> int:
     with conn.cursor() as cur:
         cur.execute(sql, (daily_run_id,))
         return cur.rowcount
-    

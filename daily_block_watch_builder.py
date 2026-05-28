@@ -1,3 +1,9 @@
+"""BLOCK 시장 구간의 관찰 후보를 만드는 builder 모듈.
+
+BUY signal을 만들지 않고 `port_strategy_common`의 block watch 판단만 호출해
+`strategy_block_watch_candidate` 저장용 dict를 구성한다. DB 접근은 repository가 담당한다.
+"""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,3 +1,9 @@
+"""단일 일자 decision snapshot을 생성하는 backtest 성격 entrypoint.
+
+market/stock feature를 DB에서 조회하고 run 기록을 생성한 뒤 market/filter/sizing
+결과를 출력한다. 문서화 작업이나 운영 승인 없는 정리 작업 중에는 실행하지 않는다.
+"""
+
 import psycopg2
 import psycopg2.extras
 
@@ -36,6 +42,7 @@ def load_stocks(conn, date):
 
 
 def run(date):
+    """DB feature를 읽어 단일 일자 market/filter/sizing 결과를 출력한다."""
     conn = get_conn()
 
     try:

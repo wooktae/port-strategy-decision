@@ -1,4 +1,8 @@
-# C:\Workspaces\port_strategy_decision\daily_position_evaluator.py
+"""daily position HOLD/SELL/SKIP v1 판단 모듈.
+
+기존 운영 SELL v1 기준을 daily position decision 저장 형식으로 옮긴다.
+DB 업데이트나 execution order 생성은 하지 않고 decision dict만 반환한다.
+"""
 
 import json
 from datetime import date

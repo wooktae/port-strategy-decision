@@ -1,3 +1,10 @@
+"""시장 feature를 공통 market decision으로 변환하는 adapter 모듈.
+
+`pre_total_market_daily_feature` row를 `port_strategy_common` 입력 컨텍스트로
+바꾸고, daily/backtest 흐름이 공유할 `MarketDecision` 값을 반환한다.
+DB 접근이나 외부 API 호출은 하지 않는다.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +35,7 @@ def d(v):
 
 
 def evaluate_market(market: dict) -> MarketDecision:
+    """공통 market 판단을 호출하고 decision 계층의 dataclass로 변환한다."""
     context = CommonMarketContext(
         trade_date=str(market.get("date", "TEST")),
         market_regime_score=float(d(market.get("market_regime_score"))),

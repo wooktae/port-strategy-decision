@@ -1,4 +1,8 @@
-# C:\Workspaces\port_strategy_decision\daily_position_evaluator_v2.py
+"""daily position HOLD/SELL/SKIP v2 판단 모듈.
+
+daily 운영 검증을 먼저 수행한 뒤 `port_strategy_common`의 common sell 판단을 재사용한다.
+DB 업데이트나 execution order 생성은 하지 않고 저장용 decision dict만 반환한다.
+"""
 
 import json
 from datetime import date
@@ -99,6 +103,8 @@ def get_feature_decimal(row: Optional[dict], key: str, default="0"):
 
 
 class DailySellDecisionAdapter:
+    """common sell 판단에 daily market signal을 전달하기 위한 최소 adapter."""
+
     def __init__(self, signal_type: str):
         self.signal_type = signal_type
 

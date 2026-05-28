@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-05-28
+
+### Added
+
+- 전체 파일 역할과 운영 주의사항을 정리한 `docs/source-file-catalog.md`를 추가했다.
+- Python 소스 파일에 모듈 단위 한글 docstring과 핵심 파이프라인/DB 함수 설명을 추가했다.
+- `docs/worklog/2026-05-28.md`에 이번 문서화/주석 정리 작업 기록을 추가했다.
+
+### Changed
+
+- README에 파일 카탈로그 위치와 문서화/주석 정리 시 기능 로직을 변경하지 않는 원칙을 보강했다.
+- 기존 파일 상단의 로컬 절대 경로 주석은 모듈 역할 설명 docstring으로 대체했다.
+
+### Notes
+
+- 기능 변경 없음.
+- 실제 DB 접속, daily signal 실행, backtest/research 실행, execution order 생성, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
+- 민감정보 값은 문서와 주석에 기록하지 않았다.
+
 ## 2026-05-27
 
 ### Changed

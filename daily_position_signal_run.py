@@ -1,4 +1,8 @@
-# C:\Workspaces\port_strategy_decision\daily_position_signal_run.py
+"""daily position HOLD/SELL/SKIP decision 생성 entrypoint.
+
+최신 완료 daily run과 활성 포지션을 읽어 v1/v2 evaluator로 판단하고 DB에 저장한다.
+position state latest 평가 갱신이 포함되므로 운영 승인 없는 정리 작업 중에는 실행하지 않는다.
+"""
 
 import argparse
 import traceback
@@ -69,6 +73,7 @@ def evaluate_position_by_version(
 
 
 def run_daily_position_decision(account_no=None, evaluator_version=None):
+    """활성 포지션별 daily position decision을 생성하고 저장한다."""
     evaluator_version = normalize_evaluator_version(evaluator_version)
 
     conn = get_conn()
@@ -199,6 +204,7 @@ def run_daily_position_decision(account_no=None, evaluator_version=None):
 
 
 def validate_latest_daily_position_decisions():
+    """최신 daily run의 position decision을 조회해 콘솔에 출력한다."""
     conn = get_conn()
 
     try:

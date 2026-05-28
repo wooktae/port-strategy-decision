@@ -1,3 +1,9 @@
+"""daily BUY signal 생성 entrypoint.
+
+전처리 total feature를 읽어 market/filter/sizing, BUY signal 저장, BLOCK watch 저장을 수행한다.
+DB 쓰기와 run 상태 갱신이 포함되므로 운영 승인 없는 문서화/정리 작업 중에는 실행하지 않는다.
+"""
+
 import argparse
 import traceback
 
@@ -62,6 +68,7 @@ def _to_common_stock_context(position: dict, run_date) -> CommonStockContext:
 
 
 def apply_daily_buy_toxic_haircut(positions: list[dict], decision, run_date) -> list[dict]:
+    """공통 buy guard/haircut 결과를 daily signal 저장용 position dict에 반영한다."""
     common_market_decision = _to_common_market_decision(decision)
 
     enriched = []
@@ -117,6 +124,7 @@ def apply_daily_buy_toxic_haircut(positions: list[dict], decision, run_date) -> 
     return enriched
 
 def run_daily_signal(run_date=None, data_date=None, run_note=None):
+    """daily run을 생성하고 BUY signal 및 BLOCK watch 후보를 DB에 저장한다."""
     conn = get_conn()
     daily_run_id = None
 

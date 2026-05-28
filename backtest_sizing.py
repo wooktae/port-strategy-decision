@@ -1,3 +1,9 @@
+"""매수 후보 sizing 공통 로직 adapter 모듈.
+
+필터를 통과한 후보와 market decision을 공통 sizing 입력으로 변환한다.
+포지션 크기 계산은 `port_strategy_common`에 위임하며 DB 접근은 하지 않는다.
+"""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -21,6 +27,7 @@ def clamp(v, mn, mx):
 
 
 def allocate_positions(buy_candidates, market_decision):
+    """공통 sizing 로직을 호출해 후보별 position_size를 산출한다."""
     common_decision = CommonMarketDecision(
         market_signal=market_decision.signal_type,
         base_exposure=float(market_decision.base_exposure),

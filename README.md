@@ -30,6 +30,8 @@
 - 로컬 산출물 또는 후보
   - test/debug/output dump로 보이는 파일은 운영 소스로 단정하지 않고 후보 또는 로컬 산출물로만 취급한다.
 
+전체 파일별 역할, DB 접근 지점, 실행 주의사항은 `docs/source-file-catalog.md`에 별도로 정리했다. AWS Migration 전 초기 정리에서는 이 문서를 기준으로 unused/legacy 의심 파일을 삭제하지 않고 “정리 후보”로만 표시한다.
+
 ## 주요 기능
 
 - total market feature 기반 market signal, base exposure, max positions, min score/flow 판단
@@ -136,6 +138,8 @@ decision, research, preprocessor, execution, connector, reference, legacy, publi
 - 민감정보 값 출력 또는 문서 기록 금지
 - 민감정보가 필요하면 `[REDACTED]`로 마스킹
 - test/debug/output dump 파일은 운영 소스로 단정하지 않고 후보 또는 로컬 산출물로만 표현
+- 문서화/주석 정리 작업은 기능 로직, URL, endpoint, class/function signature, SQL 결과 의미, DB schema/table/column 이름, batch step 순서를 변경하지 않는다.
+- Python 파일 상단 설명 주석은 실행 진입점, DB 접근, 외부 API 호출 여부를 이해하기 위한 설명으로만 유지한다.
 
 ## 검증
 

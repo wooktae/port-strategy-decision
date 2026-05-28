@@ -1,4 +1,9 @@
-# C:\Workspaces\port_strategy_decision\daily_position_repository.py
+"""daily position decision repository 모듈.
+
+최신 daily run, active position, broker snapshot, feature를 조회하고
+`strategy_daily_position_decision` 및 `strategy_position_state` latest 평가 값을 갱신한다.
+DB 쓰기가 포함되므로 호출 entrypoint 실행 전 운영 영향 범위를 확인해야 한다.
+"""
 
 import json
 from decimal import Decimal
@@ -153,6 +158,7 @@ def get_market_feature(conn, data_date):
 
 
 def upsert_daily_position_decision(conn, decision: dict):
+    """`strategy_daily_position_decision`에 HOLD/SELL/SKIP 판단 1건을 upsert한다."""
     sql = """
     INSERT INTO strategy_daily_position_decision (
         daily_run_id,
