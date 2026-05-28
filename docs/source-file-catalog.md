@@ -12,9 +12,9 @@
 
 ### `backtest_decision_run.py`
 - 한글 제목: 단일 일자 decision snapshot 실행 후보
-- 파일 내용: market/stock feature를 DB에서 읽고 market/filter/sizing 결과와 run id를 출력한다.
+- 파일 내용: market/stock feature를 DB에서 읽고 run id 없이 market/filter/sizing 결과를 출력한다.
 - 주요 역할: `backtest_market.py`, `backtest_filter.py`, `backtest_sizing.py` adapter를 묶어 단일 일자 판단 흐름을 확인한다.
-- 수정/운영 시 주의사항: DB 접근과 run 기록 생성 가능성이 있으므로 문서화 작업 중 실행하지 않는다. backtest/research 금지 범위에 포함된다.
+- 수정/운영 시 주의사항: DB feature 조회가 포함되므로 문서화 작업 중 실행하지 않는다. Common run store는 참조하지 않는다. backtest/research 금지 범위에 포함된다.
 
 ### `backtest_filter.py`
 - 한글 제목: 매수 후보 필터 adapter

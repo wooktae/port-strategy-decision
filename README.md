@@ -24,7 +24,7 @@
   - `backtest_market.py`: `port_strategy_common.common_market.common_decide_market`을 호출해 `MarketDecision`으로 변환하는 market decision adapter.
   - `backtest_filter.py`: `port_strategy_common.common_buy_filter.common_filter_buy_candidates`를 호출하는 buy candidate filter adapter.
   - `backtest_sizing.py`: `port_strategy_common.common_buy_sizing.common_allocate_positions`를 호출하는 sizing adapter.
-  - `backtest_decision_run.py`: 단일 일자 market/stock feature를 읽어 decision snapshot을 출력하는 backtest 성격 entrypoint 후보. 실제 실행 시 DB 접근과 run 기록 생성 가능성이 있으므로 문서화 작업 중 실행하지 않는다.
+  - `backtest_decision_run.py`: 단일 일자 market/stock feature를 읽어 market/filter/sizing decision snapshot만 출력하는 backtest 성격 entrypoint 후보. 실제 실행 시 DB feature 조회가 발생하므로 문서화 작업 중 실행하지 않는다.
 - 검증/조회 후보
   - `daily_validator.py`: 최신 daily run과 signal을 조회해 출력하는 검증 후보. DB 조회와 민감정보 출력 가능성을 확인한 뒤에만 실행한다.
 - 로컬 산출물 또는 후보
@@ -57,6 +57,8 @@
 - sizing
   - `backtest_sizing.py`가 `common_allocate_positions`를 호출한다.
   - `daily_buy_signal_run.py`는 buy guard와 haircut에 `common_decide_buy_guard`, `common_apply_backtest_buy_size_haircut`, `common_safe_float`를 사용한다.
+- run store
+  - `backtest_decision_run.py`는 더 이상 Common run store를 참조하지 않고, snapshot 출력용으로만 유지한다.
 - block watch
   - `daily_block_watch_builder.py`가 `evaluate_block_watch_candidate`를 사용한다.
 - sell decision
@@ -66,7 +68,7 @@
 
 ## 실행 방법
 
-각 스크립트는 독립 실행형 entrypoint를 가진 파일이 있다. 다만 실행 시 DB 연결, run 기록 생성, signal/decision upsert, position state 갱신, 주문 후보로 이어질 수 있는 데이터 생성이 발생할 수 있으므로 운영 환경에서만 의도적으로 실행해야 한다.
+각 스크립트는 독립 실행형 entrypoint를 가진 파일이 있다. 다만 실행 시 DB 연결, signal/decision upsert, position state 갱신, 주문 후보로 이어질 수 있는 데이터 생성이 발생할 수 있으므로 운영 환경에서만 의도적으로 실행해야 한다.
 
 예시 형식:
 
@@ -76,7 +78,7 @@ python daily_position_signal_run.py --evaluator-version v2
 python daily_validator.py
 ```
 
-문서화/분석 작업 중에는 위 명령을 실행하지 않는다. `backtest_decision_run.py`도 DB 접근과 run 기록 생성 가능성이 있으므로 backtest/research 금지 범위에서는 실행하지 않는다.
+문서화/분석 작업 중에는 위 명령을 실행하지 않는다. `backtest_decision_run.py`도 run 기록은 생성하지 않지만 DB feature 조회를 수행하므로 backtest/research 금지 범위에서는 실행하지 않는다.
 
 ## 설정 방법
 

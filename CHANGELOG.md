@@ -10,6 +10,8 @@
 
 ### Changed
 
+- `backtest_decision_run.py`에서 Common run store 의존성과 run 기록 생성 호출을 제거하고, 단일 일자 market/filter/sizing snapshot 출력 entrypoint로 정리했다.
+- README와 `docs/source-file-catalog.md`에 `backtest_decision_run.py`가 run id를 출력하지 않고 DB feature 조회 기반 snapshot만 출력한다는 내용을 반영했다.
 - README에 파일 카탈로그 위치와 문서화/주석 정리 시 기능 로직을 변경하지 않는 원칙을 보강했다.
 - 기존 파일 상단의 로컬 절대 경로 주석은 모듈 역할 설명 docstring으로 대체했다.
 

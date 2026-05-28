@@ -1,7 +1,7 @@
 """단일 일자 decision snapshot을 생성하는 backtest 성격 entrypoint.
 
-market/stock feature를 DB에서 조회하고 run 기록을 생성한 뒤 market/filter/sizing
-결과를 출력한다. 문서화 작업이나 운영 승인 없는 정리 작업 중에는 실행하지 않는다.
+market/stock feature를 DB에서 조회하고 market/filter/sizing 결과를 출력한다.
+문서화 작업이나 운영 승인 없는 정리 작업 중에는 실행하지 않는다.
 """
 
 import psycopg2
@@ -12,7 +12,6 @@ from port_strategy_decision.backtest_market import evaluate_market
 from port_strategy_decision.backtest_filter import filter_buy_candidates
 from port_strategy_decision.backtest_sizing import allocate_positions
 from port_strategy_decision.db_config import get_db_config
-from port_strategy_common.run_store import create_run, ensure_run_tables
 
 
 def get_conn():
@@ -46,14 +45,6 @@ def run(date):
     conn = get_conn()
 
     try:
-        ensure_run_tables(conn)
-        run_id = create_run(
-            conn,
-            run_mode="DECISION",
-            run_note="single day decision snapshot",
-            run_date=date,
-        )
-
         market = load_market(conn, date)
         stocks = load_stocks(conn, date)
 
@@ -61,7 +52,6 @@ def run(date):
         candidates = filter_buy_candidates(stocks, decision)
         positions = allocate_positions(candidates, decision)
 
-        print("RUN ID:", run_id)
         print("===== RESULT =====")
         print("market:", decision)
         print("candidates:", len(candidates))
