@@ -1,160 +1,289 @@
 # port_strategy_decision
 
-포트폴리오 전략의 daily decision 계층을 담당하는 Python 마이크로서비스 루트다. 전처리 계층이 만든 total feature를 읽어 시장 판단, 매수 후보 필터, sizing, daily buy signal, 보유 포지션 HOLD/SELL 판단을 생성한다.
+`port_strategy_decision`은 Preprocessor가 생성한 total feature를 읽어 일일 전략 판단을 만드는 Decision 마이크로서비스다.
 
-이 문서는 현재 로컬 파일 구조와 import/entrypoint 확인 결과를 기준으로 작성했다. 실제 daily signal 실행, backtest/research 실행, execution order 생성, DB DDL/DML, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
+시장 상태와 매수 가능 범위를 판단하고, 종목 후보를 필터링해 수량을 계산한다. 또한 활성 포지션을 평가해 HOLD, SELL, SKIP 판단을 생성한다.
 
-## 현재 구조
+이 문서는 현재 저장소의 파일 구조, import, entrypoint와 기존 운영 문서를 기준으로 작성했다. 문서 정리 과정에서는 실제 daily signal, position signal, backtest, DB 쓰기, 외부 API, AWS와 주문 실행을 수행하지 않았다.
 
-현재 루트는 패키지 디렉터리보다 독립 실행형 Python 스크립트 중심이다.
+## 1. 서비스 요약
 
-- daily buy signal 계열
-  - `daily_buy_signal_run.py`: `pre_total_*` feature를 읽어 시장 판단, 매수 후보 필터, sizing, BUY signal, BLOCK watch 후보 저장을 묶는 daily buy signal entrypoint 후보.
-  - `daily_feature_loader.py`: run date와 data date를 결정하고 `pre_total_market_daily_feature`, `pre_total_stock_daily_feature`, `stock_universe`에서 feature를 조회하는 loader.
-  - `daily_signal_builder.py`: sizing 결과와 stock feature를 `strategy_daily_signal` 저장 형식으로 변환.
-  - `daily_repository.py`: `strategy_daily_run`, `strategy_daily_signal` 생성, 갱신, 조회 repository.
-  - `daily_block_watch_builder.py`: BLOCK 시장 구간에서 BUY signal은 만들지 않고 관찰 후보만 선별.
-  - `daily_block_watch_repository.py`: `strategy_block_watch_candidate` 계열 저장/삭제 repository.
-- daily position signal 계열
-  - `daily_position_signal_run.py`: 최신 완료 daily run과 활성 포지션을 읽어 v1/v2 evaluator로 HOLD/SELL/SKIP decision을 생성하는 entrypoint 후보.
-  - `daily_position_evaluator.py`: daily position v1 판단. 운영 SELL v1 기준과 맞춘 hard stop, 최소/최대 보유일, market BLOCK, 품질 저하, 수익권 HOLD 판단을 수행.
-  - `daily_position_evaluator_v2.py`: daily position v2 판단. daily 운영 검증을 먼저 처리하고 `port_strategy_common.common_sell_decision.common_evaluate_backtest_sell`을 재사용.
-  - `daily_position_repository.py`: active position, broker position snapshot, stock/market feature, daily position decision 저장 및 position state latest 평가 갱신 repository.
-- market/filter/sizing/decision 계열
-  - `backtest_market.py`: `port_strategy_common.common_market.common_decide_market`을 호출해 `MarketDecision`으로 변환하는 market decision adapter.
-  - `backtest_filter.py`: `port_strategy_common.common_buy_filter.common_filter_buy_candidates`를 호출하는 buy candidate filter adapter.
-  - `backtest_sizing.py`: `port_strategy_common.common_buy_sizing.common_allocate_positions`를 호출하는 sizing adapter.
-  - `backtest_decision_run.py`: 단일 일자 market/stock feature를 읽어 market/filter/sizing decision snapshot만 출력하는 backtest 성격 entrypoint 후보. 실제 실행 시 DB feature 조회가 발생하므로 문서화 작업 중 실행하지 않는다.
-- 검증/조회 후보
-  - `daily_validator.py`: 최신 daily run과 signal을 조회해 출력하는 검증 후보. DB 조회와 민감정보 출력 가능성을 확인한 뒤에만 실행한다.
-- 로컬 산출물 또는 후보
-  - test/debug/output dump로 보이는 파일은 운영 소스로 단정하지 않고 후보 또는 로컬 산출물로만 취급한다.
+| 항목 | 값 |
+|---|---|
+| 서비스 | `port_strategy_decision` |
+| 계층 | Daily Decision |
+| 주요 입력 | `pre_total_market_daily_feature`, `pre_total_stock_daily_feature` |
+| 주요 판단 | Market, Buy Filter, Sizing, BUY, BLOCK Watch, HOLD, SELL, SKIP |
+| 주요 출력 | Daily Run, Daily Signal, Block Watch Candidate, Position Decision, Position State |
+| 공통 로직 | `port_strategy_common` |
+| 운영 진입점 | `daily_buy_signal_run.py`, `daily_position_signal_run.py` |
+| 상세 파일 문서 | `docs/source-file-catalog.md` |
 
-전체 파일별 역할, DB 접근 지점, 실행 주의사항은 `docs/source-file-catalog.md`에 별도로 정리했다. AWS Migration 전 초기 정리에서는 이 문서를 기준으로 unused/legacy 의심 파일을 삭제하지 않고 “정리 후보”로만 표시한다.
+## 2. 책임 경계
 
-## 주요 기능
+Decision은 feature를 기반으로 판단 결과를 생성하고 저장한다. 원천 수집, feature 생성, 주문 실행과 화면 표시는 다른 계층의 책임이다.
 
-- total market feature 기반 market signal, base exposure, max positions, min score/flow 판단
-- total stock feature 기반 buy candidate filter와 position sizing
-- daily BUY signal 저장 및 daily run 성공/실패 상태 갱신
-- BLOCK 시장에서 강한 예외 후보를 별도 watch candidate로 기록
-- 최신 완료 daily run 기준 보유 포지션 HOLD/SELL/SKIP 판단
-- broker position snapshot, strategy position state, stock/market feature를 결합한 daily position decision 생성
-- v2 evaluator에서 common sell 판단을 daily 계층에 맞게 adapter 처리
+### 2.1 Decision이 담당하는 범위
 
-## 책임 경계
+| 영역 | 책임 |
+|---|---|
+| Market | 시장 상태와 노출 한도, 최대 보유 수, 최소 점수·수급 기준 판단 |
+| Buy Filter | 종목 feature를 매수 후보 기준으로 필터링 |
+| Sizing | 후보별 매수 수량과 비중 계산 |
+| Daily Buy | Daily Run과 BUY Signal 생성 및 실행 상태 갱신 |
+| BLOCK Watch | BUY 차단 구간의 관찰 후보 별도 기록 |
+| Position | 활성 포지션의 HOLD, SELL, SKIP 판단 |
+| Adapter | `port_strategy_common` 결과를 daily 저장 형식으로 변환 |
 
-이 저장소는 daily decision 계층에만 책임을 둔다. 다른 마이크로서비스가 담당하는 영역은 여기서 처리하지 않고, 계약 지점에서 입력/출력으로만 연결한다.
+### 2.2 다른 계층이 담당하는 범위
 
-Decision이 직접 담당하는 범위:
+| 영역 | 담당 계층 |
+|---|---|
+| 외부 데이터 수집 | Crawler |
+| raw 데이터 전처리와 total feature 생성 | Preprocessor |
+| execution plan과 주문 요청 구성 | StrategyExecution |
+| broker 주문·체결·잔고·보유 동기화 | MarketConnector |
+| backtest 시나리오와 연구 보고서 | StrategyResearch |
+| 상태 조회와 승인 UI | View |
+| 전체 batch orchestration | EventBridge Scheduler와 Step Functions |
+| 이미지 build, ECR push와 task definition 등록 | 배포 파이프라인 |
 
-- Preprocessor가 저장한 `pre_total_market_daily_feature`, `pre_total_stock_daily_feature`를 읽어 판단 입력을 구성
-- `port_strategy_common`의 market/filter/sizing/guard/sell 로직을 daily 운영 입력/출력에 맞게 adapter 처리
-- market signal, base exposure, max positions, min score/flow 판단 결과 저장
-- 매수 후보 필터와 sizing 결과를 daily BUY signal로 `strategy_daily_run`, `strategy_daily_signal`에 저장
-- 시장이 BLOCK이면 BUY signal 생성을 막고 `strategy_block_watch_candidate`에 관찰 후보만 저장
-- 활성 포지션과 broker snapshot, stock/market feature를 결합해 HOLD/SELL/SKIP decision을 `strategy_daily_position_decision`에 저장하고 `strategy_position_state` 최신 평가 갱신
-- daily position v2에서 `common_evaluate_backtest_sell` 결과를 daily decision 형식으로 mapping
+Decision이 SELL 판단을 만들더라도 실제 매도 주문을 제출하지 않는다. BUY Signal도 StrategyExecution이 소비하기 전까지는 주문이 아니다.
 
-Decision이 직접 담당하지 않는 범위:
+## 3. 핵심 실행 흐름
 
-- 외부 데이터 수집(Crawler 책임)
-- raw 데이터 전처리와 total feature 생성(Preprocessor 책임)
-- daily signal을 소비해 execution plan을 만들고 주문 요청을 구성하는 흐름(StrategyExecution 책임)
-- KIS 등 broker API 주문 제출, 체결 동기화, 잔고 및 보유 snapshot refresh(MarketConnector 책임)
-- backtest 시나리오 실행과 report 생성(StrategyResearch 책임)
-- 실행 상태 조회 UI, 승인 UI, 화면 렌더링(View 책임)
-- daily batch 전체 orchestration(EventBridge Scheduler와 Step Functions 책임)
+### 3.1 Daily Buy Signal
 
-## AWS 운영 구조에서의 Decision 위치
+```text
+Preprocessor total feature
+  → Daily Feature Loader
+  → Market Decision
+  → Buy Candidate Filter
+  → Position Sizing
+  → BUY Signal 또는 BLOCK Watch
+  → Daily Run 상태 갱신
+```
 
-이 저장소는 AWS Paper 운영에서 daily 판단 실행 대상으로 사용된다. 상세한 Step Functions state, Scheduler 라인업, Lambda 내부 구현은 각 담당 저장소 문서에서 관리한다. 여기서는 Decision 관점의 책임 범위만 정리한다.
+| 단계 | 주요 파일 |
+|---|---|
+| 진입점 | `daily_buy_signal_run.py` |
+| feature 조회 | `daily_feature_loader.py` |
+| market 판단 | `backtest_market.py` |
+| 후보 필터 | `backtest_filter.py` |
+| 수량 계산 | `backtest_sizing.py` |
+| signal 변환 | `daily_signal_builder.py` |
+| run·signal 저장 | `daily_repository.py` |
+| BLOCK 후보 선별 | `daily_block_watch_builder.py` |
+| BLOCK 후보 저장 | `daily_block_watch_repository.py` |
 
-- AWS Paper Daily Step 6 Daily Buy Signal
-  - `daily_buy_signal_run.py`가 실행 대상이며, run date와 data date를 기준으로 total feature를 읽어 market/filter/sizing을 수행하고 BUY signal과 BLOCK watch 후보를 저장한다.
-  - `daily_feature_loader.py`, `daily_signal_builder.py`, `daily_repository.py`가 입력 조회와 signal 저장을 담당한다.
-  - market이 BLOCK이면 `daily_block_watch_builder.py`와 `daily_block_watch_repository.py`로 watch candidate 흐름이 실행된다.
-- AWS Paper Daily Step 7 Position Signal
-  - `daily_position_signal_run.py`가 실행 대상이며, 최신 완료 daily run과 활성 포지션을 읽어 evaluator v1/v2로 HOLD/SELL/SKIP decision을 생성한다.
-  - `daily_position_evaluator.py`는 daily 운영 v1 기준을, `daily_position_evaluator_v2.py`는 daily 검증 선처리 + common sell 재사용 기준을 담당한다.
-  - `daily_position_repository.py`가 active position, broker snapshot, feature 조회와 decision/position state 저장을 담당한다.
-- 실행 컨테이너
-  - Decision은 ECS RunTask 또는 동일한 컨테이너 이미지 실행 대상으로 사용될 수 있다. `Dockerfile`이 daily 실행 이미지 정의이며, 기본 CMD로 `python -m port_strategy_decision.daily_buy_signal_run`을 실행한다.
-  - Step Functions에서 다른 진입점(`daily_position_signal_run`)이 필요하면 command override로 지정한다. 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id는 문서에 원문으로 기록하지 않는다.
+Market이 BLOCK이면 일반 BUY Signal을 만들지 않고 관찰 후보만 별도 저장한다. BLOCK Watch는 주문 우회 경로가 아니라 관찰용 산출물이다.
 
-각 서비스 사이의 실행 책임 경계는 다음과 같다.
+### 3.2 Daily Position Signal
 
-- Scheduler와 Step Functions: 실행 orchestration
-- Preprocessor: Decision 입력 feature 생성
-- Decision: feature 기반 판단과 signal/decision 저장
-- StrategyExecution: Decision 산출물을 실행 계획과 주문 후보로 넘기는 후속 처리
-- MarketConnector: 실제 broker API와 주문/체결/잔고
-- View: 실행 상태 조회 및 trigger UI(Decision 내부 실행 책임 아님)
-- StrategyResearch: backtest 시나리오와 연구 산출물
+```text
+Latest completed Daily Run
+  + Active Strategy Position
+  + Broker Position Snapshot
+  + Market·Stock Feature
+  → Position Evaluator v1 또는 v2
+  → HOLD · SELL · SKIP Decision
+  → Position State 최신 평가 갱신
+```
 
-## 컨테이너 이미지
+| 단계 | 주요 파일 |
+|---|---|
+| 진입점 | `daily_position_signal_run.py` |
+| v1 평가 | `daily_position_evaluator.py` |
+| v2 평가 | `daily_position_evaluator_v2.py` |
+| 입력 조회·결과 저장 | `daily_position_repository.py` |
 
-`Dockerfile`은 Python 3.13 slim 기반이며, `port_strategy_common`을 함께 vendoring해서 ECS RunTask 실행 이미지로 사용한다. 이 vendoring은 AWS smoke 단계의 임시 조치이며 `port_strategy_common`의 정식 패키징/버저닝이 정리되면 교체 대상이다.
+v1은 daily 운영 기준을 직접 평가한다. v2는 daily 검증을 먼저 수행한 뒤 `port_strategy_common`의 sell 판단을 재사용해 daily decision 형식으로 변환한다.
 
-- 기본 CMD: `python -m port_strategy_decision.daily_buy_signal_run`
-- 다른 진입점 실행이 필요하면 컨테이너 실행 시 command override로 지정한다.
-- 이미지 build/push, ECR URI, task definition 등록은 이 저장소의 책임 범위가 아니며 배포 파이프라인 저장소에서 관리한다.
+### 3.3 조회와 보조 진입점
 
-## port_strategy_common 의존성
+| 파일 | 현재 역할 |
+|---|---|
+| `backtest_decision_run.py` | 단일 일자 feature를 읽어 market, filter, sizing snapshot을 출력하는 보조 진입점 |
+| `daily_validator.py` | 최신 Daily Run과 Signal을 조회해 확인하는 검증 후보 |
 
-이 저장소는 판단 핵심 로직 상당 부분을 `port_strategy_common`에서 가져온다.
+두 파일 모두 DB 조회가 발생할 수 있다. 문서 작업이나 단순 구조 점검 중에는 실행하지 않는다.
 
-- `port_strategy_common.config`
-  - `STRATEGY_NAME`, `ENGINE_VERSION`, `MARKET_CONFIG`, `FILTER_CONFIG`, `SIZING_CONFIG`, `DECISION_RUN_DATE`, `get_config_snapshot`을 참조한다.
-- `db_config.py`
-  - 이 MS의 DB 접속 설정은 `INTEREST_DB_*` 환경변수에서 읽는다.
-- market decision
-  - `backtest_market.py`가 `CommonMarketContext`를 만들고 `common_decide_market`을 호출한다.
-- buy filter
-  - `backtest_filter.py`가 `CommonMarketDecision`으로 변환한 뒤 `common_filter_buy_candidates`를 호출한다.
-- sizing
-  - `backtest_sizing.py`가 `common_allocate_positions`를 호출한다.
-  - `daily_buy_signal_run.py`는 buy guard와 haircut에 `common_decide_buy_guard`, `common_apply_backtest_buy_size_haircut`, `common_safe_float`를 사용한다.
-- run store
-  - `backtest_decision_run.py`는 더 이상 Common run store를 참조하지 않고, snapshot 출력용으로만 유지한다.
-- block watch
-  - `daily_block_watch_builder.py`가 `evaluate_block_watch_candidate`를 사용한다.
-- sell decision
-  - `daily_position_evaluator_v2.py`가 `common_evaluate_backtest_sell`을 daily position decision 형식으로 mapping한다.
+## 4. 입력 데이터
 
-공통 로직 함수명, dataclass 필드, decision reason 문자열은 다른 서비스와 연결될 수 있으므로 명시 요청 없이 변경하지 않는다.
+Decision은 원천 데이터를 직접 수집하거나 total feature를 생성하지 않는다.
 
-## 실행 방법
+| 입력 | 사용 목적 |
+|---|---|
+| `pre_total_market_daily_feature` | 시장 상태와 시장 단위 제한 판단 |
+| `pre_total_stock_daily_feature` | 종목 필터, sizing과 position 평가 |
+| `stock_universe` | 종목명(company_name) 보강용 LEFT JOIN 대상 |
+| `connector_balance_snapshot` | Position 평가에서 최신 broker snapshot 기준일 확인 |
+| `connector_position_snapshot` | broker 보유 상태 확인 |
+| `strategy_position_state` | 전략 포지션의 최신 상태 확인 |
 
-각 스크립트는 독립 실행형 entrypoint를 가진 파일이 있다. 다만 실행 시 DB 연결, signal/decision upsert, position state 갱신, 주문 후보로 이어질 수 있는 데이터 생성이 발생할 수 있으므로 운영 환경에서만 의도적으로 실행해야 한다.
+입력 데이터에서는 run date와 data date를 구분한다. Market과 Stock feature가 같은 판단 기준일을 가리키는지 확인해야 하며, 누락값과 실제 0값을 같은 의미로 처리하면 안 된다.
 
-내부 import는 `from port_strategy_decision.xxx import ...` 형태이므로 스크립트를 직접 파일 경로로 실행하지 않고 `python -m` 형식으로 실행한다. 컨테이너 이미지 CMD도 동일한 형식을 사용한다.
+## 5. 출력 데이터
 
-예시 형식:
+| 출력 | 의미 |
+|---|---|
+| `strategy_daily_run` | Daily Buy 판단 실행 단위와 최종 상태 |
+| `strategy_daily_signal` | BUY 후보와 sizing 결과 |
+| `strategy_block_watch_candidate` | BLOCK 시장의 관찰 후보 |
+| `strategy_daily_position_decision` | 포지션 HOLD, SELL, SKIP 판단 이력 |
+| `strategy_position_state` | 포지션의 최신 평가 상태 |
+
+테이블명, 상태값, reason, evaluator version, unique key와 upsert 범위는 downstream 계약과 연결된다. 변경 시 StrategyExecution과 운영 조회 영향까지 함께 확인해야 한다.
+
+## 6. 주요 파일 구조
+
+### 6.1 Daily Buy 계열
+
+| 파일 | 역할 |
+|---|---|
+| `daily_buy_signal_run.py` | Market, Filter, Sizing, BUY와 BLOCK Watch를 묶는 진입점 |
+| `daily_feature_loader.py` | run date, data date와 market·stock feature 조회 |
+| `daily_signal_builder.py` | sizing 결과를 Daily Signal 저장 형식으로 변환 |
+| `daily_repository.py` | Daily Run과 Signal 생성·조회·상태 갱신 |
+| `daily_block_watch_builder.py` | BLOCK 구간의 관찰 후보 선별 |
+| `daily_block_watch_repository.py` | Block Watch 후보 저장과 대상 범위 정리 |
+
+### 6.2 Daily Position 계열
+
+| 파일 | 역할 |
+|---|---|
+| `daily_position_signal_run.py` | 활성 포지션 평가 진입점 |
+| `daily_position_evaluator.py` | Position Decision v1 |
+| `daily_position_evaluator_v2.py` | Daily 검증과 common sell 재사용 기반 v2 |
+| `daily_position_repository.py` | 포지션·snapshot·feature 조회와 Decision 저장 |
+
+### 6.3 공통 판단 Adapter
+
+| 파일 | 역할 |
+|---|---|
+| `backtest_market.py` | Common Market 판단을 Decision 형식으로 변환 |
+| `backtest_filter.py` | Common Buy Filter 호출 Adapter |
+| `backtest_sizing.py` | Common Position Allocation 호출 Adapter |
+| `backtest_decision_run.py` | 단일 일자 Decision Snapshot 보조 진입점 |
+
+전체 파일의 입출력, DB 접근과 변경 영향은 `docs/source-file-catalog.md`에서 관리한다. 작은 helper나 로컬 dump는 운영 책임이 확인되기 전까지 주요 구조로 단정하지 않는다.
+
+## 7. `port_strategy_common` 의존성
+
+Decision의 핵심 판단 로직 상당 부분은 `port_strategy_common`을 재사용한다.
+
+| 영역 | 주요 계약 |
+|---|---|
+| Config | Strategy Name, Engine Version, Market·Filter·Sizing 설정과 Snapshot |
+| Market | Market Context와 Market Decision |
+| Buy Filter | Buy Candidate Filter |
+| Sizing | Position Allocation |
+| Guard | Buy Guard와 Size Haircut |
+| BLOCK Watch | Block Watch Candidate 평가 |
+| Sell | Common Backtest Sell Decision |
+
+현재 문서에서 확인되는 주요 사용 관계는 다음과 같다.
+
+| 파일 | Common 사용 |
+|---|---|
+| `backtest_market.py` | `common_decide_market` |
+| `backtest_filter.py` | `common_filter_buy_candidates` |
+| `backtest_sizing.py` | `common_allocate_positions` |
+| `daily_buy_signal_run.py` | Buy Guard, Size Haircut, Safe Float |
+| `daily_block_watch_builder.py` | Block Watch Candidate 평가 |
+| `daily_position_evaluator_v2.py` | `common_evaluate_backtest_sell` |
+
+Public 함수명, dataclass 필드, enum, config key와 reason 문자열은 다른 서비스와 연결될 수 있다. Decision 단독 판단으로 변경하지 않는다.
+
+## 8. AWS Paper Daily 위치
+
+Decision은 AWS Paper Daily에서 판단 단계로 사용된다. Scheduler, Step Functions state와 Lambda 세부 구현은 각 담당 저장소가 관리한다.
+
+| Daily 단계 | Decision 역할 |
+|---|---|
+| Step 6 · Daily Buy Signal | total feature를 읽어 Market, Filter, Sizing, BUY 또는 BLOCK Watch 결과 저장 |
+| Step 7 · Position Signal | 활성 포지션을 읽어 HOLD, SELL, SKIP Decision 저장 |
+
+### 8.1 Step 6
+
+| 항목 | 값 |
+|---|---|
+| 진입점 | `daily_buy_signal_run.py` |
+| 입력 | Market·Stock Total Feature, Universe와 판단 설정 |
+| 출력 | Daily Run, Daily Signal 또는 Block Watch Candidate |
+| 직접 하지 않는 일 | Execution Plan 생성, 주문 요청과 broker 주문 제출 |
+
+### 8.2 Step 7
+
+| 항목 | 값 |
+|---|---|
+| 진입점 | `daily_position_signal_run.py` |
+| 입력 | Latest Completed Run, Active Position, Broker Snapshot, Feature |
+| 출력 | Position Decision과 Position State 최신 평가 |
+| 직접 하지 않는 일 | 매도 주문 요청 생성과 broker 주문 제출 |
+
+실제 cluster, task definition ARN, image URI, subnet, security group, command id와 credential은 README에 기록하지 않는다.
+
+## 9. 컨테이너 이미지
+
+`Dockerfile`은 Decision 실행 이미지를 정의한다.
+
+| 항목 | 현재 문서 기준 |
+|---|---|
+| Base Image | Python 3.13 slim |
+| 기본 CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
+| Position 실행 | 컨테이너 command override로 `daily_position_signal_run` 지정 |
+| Common 포함 | `port_strategy_common` vendoring |
+| 배포 책임 | 별도 배포 파이프라인 |
+
+Common vendoring은 현재 운영 연결을 위한 방식이다. 정식 패키징과 버저닝이 도입되면 교체 여부를 다시 판단한다.
+
+## 10. 실행 방법
+
+내부 import가 `from port_strategy_decision.xxx import ...` 형식이므로 파일 경로 직접 실행보다 `python -m` 형식을 사용한다.
+
+아래 명령은 실행 형식을 설명하기 위한 예시다. DB 조회와 쓰기가 발생할 수 있으므로 문서 작업 중에는 실행하지 않는다.
 
 ```powershell
-python -m port_strategy_decision.daily_buy_signal_run --run-date 2026-05-26 --data-date 2026-05-25
-python -m port_strategy_decision.daily_position_signal_run --evaluator-version v2
-python -m port_strategy_decision.daily_position_signal_run --validate-only
+python -m port_strategy_decision.daily_buy_signal_run `
+  --run-date 2026-05-26 `
+  --data-date 2026-05-25
+
+python -m port_strategy_decision.daily_position_signal_run `
+  --evaluator-version v2
+
+python -m port_strategy_decision.daily_position_signal_run `
+  --validate-only
+
 python -m port_strategy_decision.daily_validator
 ```
 
-문서화/분석 작업 중에는 위 명령을 실행하지 않는다. `backtest_decision_run.py`도 run 기록은 생성하지 않지만 DB feature 조회를 수행하므로 backtest/research 금지 범위에서는 실행하지 않는다.
+| 진입점 | 실행 영향 |
+|---|---|
+| `daily_buy_signal_run` | Daily Run, Signal과 Block Watch 데이터 생성·갱신 가능 |
+| `daily_position_signal_run` | Position Decision과 Position State 갱신 가능 |
+| `daily_validator` | DB 조회와 데이터 출력 가능 |
+| `backtest_decision_run` | Run 기록은 만들지 않더라도 DB feature 조회 가능 |
 
-## 설정 방법
+## 11. 설정
 
-설정은 주로 `port_strategy_common.config`와 로컬 `db_config.py`에서 가져온다. 민감정보는 코드, 문서, 로그, 예시 출력에 기록하지 않는다. 필요한 값은 환경변수 또는 local config로 분리하고 문서에는 `[REDACTED]`로 마스킹한다.
+설정은 `port_strategy_common.config`와 로컬 `db_config.py`를 사용한다.
 
-주요 설정 유형:
+### 11.1 주요 설정 영역
 
-- PostgreSQL host, port, database, user, password
-- strategy name과 engine version
-- market/filter/sizing config
-- decision run date
-- feature 입력 테이블과 strategy 출력 테이블의 스키마 계약
-- 계좌 필터 또는 broker position snapshot 조회 조건
+| 설정 | 용도 |
+|---|---|
+| PostgreSQL 연결 | host, port, database, user와 password |
+| Strategy 설정 | Strategy Name과 Engine Version |
+| Market 설정 | 시장 상태와 노출 한도 판단 |
+| Filter 설정 | 매수 후보 기준 |
+| Sizing 설정 | 후보별 비중과 수량 계산 |
+| Decision Run Date | 실행 기준일 override 후보 |
+| Schema 계약 | Feature 입력과 Strategy 출력 테이블 해석 |
 
-DB 접속 환경변수:
+### 11.2 DB 환경변수
+
+현재 문서와 `db_config.py` 계약은 `INTEREST_DB_*` 계열을 기준으로 한다.
 
 ```powershell
 $env:INTEREST_DB_HOST="localhost"
@@ -164,53 +293,83 @@ $env:INTEREST_DB_USER="postgres"
 $env:INTEREST_DB_PASSWORD="[REDACTED]"
 ```
 
-`INTEREST_DB_NAME`의 기본 DB명은 `portfolio`다. 이 모듈에서는 현재 `INTEREST_DB_*` 환경변수를 사용하며, 같은 포트폴리오 시스템 내에서 `PORTFOLIO_DB_NAME` 계열 이름을 병행해 설명하는 경우에도 기본 DB명은 `portfolio`로 맞춘다. `INTEREST_DB_PASSWORD`는 기본값이 없으며 비어 있으면 실행 시 `RuntimeError`가 발생한다. 나머지 값은 위 예시 값이 기본값이다.
+| 환경변수 | 현재 문서 기준 |
+|---|---|
+| `INTEREST_DB_HOST` | 기본 `localhost` |
+| `INTEREST_DB_PORT` | 기본 `5433` |
+| `INTEREST_DB_NAME` | 기본 `portfolio` |
+| `INTEREST_DB_USER` | 기본 `postgres` |
+| `INTEREST_DB_PASSWORD` | 기본값 없음, 누락 시 실행 오류 |
 
-로컬 PostgreSQL은 AWS Migration 준비 관점에서 단일 DB `portfolio` 안에 domain별 schema를 나누는 구조를 사용한다. 이 모듈의 DB connection `search_path`는 다음 순서를 기준으로 한다.
+실제 credential은 환경변수나 local secret loader로 관리한다. password, token, account, webhook URL은 문서와 로그에 원문으로 남기지 않는다.
+
+### 11.3 Search Path
+
+현재 문서 기준 DB connection의 search path는 아래 순서를 사용한다.
 
 ```text
 decision, research, preprocessor, execution, connector, reference, legacy, public
 ```
 
-`public`에 있던 테이블은 domain schema로 이동되었지만, 기존 SQL은 schema-qualified table name을 강제하지 않고 위 `search_path` 기반으로 계속 동작하도록 유지한다. Daily BUY Signal은 `strategy_block_watch_candidate`를 사용하므로 `research` schema가 `search_path`에 포함되어야 한다.
+| Schema | 주요 역할 |
+|---|---|
+| `decision` | Daily Run, Signal과 Position Decision |
+| `research` | Block Watch Candidate |
+| `preprocessor` | Market·Stock Total Feature |
+| `execution` | 후속 실행 계약 참조 |
+| `connector` | Balance와 Position Snapshot |
+| `reference` | Stock Universe 등 기준 정보 |
+| `legacy`, `public` | 기존 unqualified SQL 호환 |
 
-민감정보는 환경변수 또는 로컬 운영 설정으로 관리한다. 문서에는 실제 password, token, account, webhook URL 값을 쓰지 않고 필요한 경우 `[REDACTED]`로 마스킹한다.
+`strategy_block_watch_candidate` 사용 때문에 `research` schema가 search path에 포함된다. 순서 변경은 unqualified SQL의 대상 table을 바꿀 수 있으므로 계약 변경으로 취급한다.
 
-## 외부 의존성
+## 12. 외부 의존성
 
-현재 파일에서 확인되는 주요 의존성 후보는 다음과 같다.
+| 의존성 | 용도 |
+|---|---|
+| Python | Runtime |
+| PostgreSQL | Feature 조회와 Decision 저장 |
+| `psycopg2` | PostgreSQL 연결 |
+| `psycopg2.extras` | Row와 Batch 처리 보조 |
+| `port_strategy_common` | Market, Filter, Sizing, Guard와 Sell 공통 판단 |
+| Preprocessor Feature | Decision 입력 |
+| Connector Snapshot | Position 평가 입력 |
+| StrategyExecution | Daily Signal 후속 소비자 |
 
-- Python
-- `psycopg2`
-- `psycopg2.extras`
-- PostgreSQL
-- `port_strategy_common`
-- 전처리 산출 테이블: `pre_total_market_daily_feature`, `pre_total_stock_daily_feature`
-- 전략 출력 테이블: `strategy_daily_run`, `strategy_daily_signal`, `strategy_block_watch_candidate`, `strategy_daily_position_decision`, `strategy_position_state`
-- broker snapshot 테이블: `connector_balance_snapshot`, `connector_position_snapshot`
+Dependency의 정확한 설치 버전과 배포 구성은 `requirements.txt`, Dockerfile과 배포 저장소를 함께 확인한다.
 
-## 안전 제약
+## 13. 상태와 재실행 주의사항
 
-- 실제 daily signal 실행 금지
-- backtest/research 실행 금지
-- execution/order 생성 실행 금지
-- DB DDL/DML 직접 실행 금지
-- 외부 API 호출 금지
-- 크롤링 실행 금지
-- 주문 실행 금지
-- 민감정보 값 출력 또는 문서 기록 금지
-- 민감정보가 필요하면 `[REDACTED]`로 마스킹
-- test/debug/output dump 파일은 운영 소스로 단정하지 않고 후보 또는 로컬 산출물로만 표현
-- 문서화/주석 정리 작업은 기능 로직, URL, endpoint, class/function signature, SQL 결과 의미, DB schema/table/column 이름, batch step 순서를 변경하지 않는다.
-- Python 파일 상단 설명 주석은 실행 진입점, DB 접근, 외부 API 호출 여부를 이해하기 위한 설명으로만 유지한다.
+| 주의사항 | 확인 내용 |
+|---|---|
+| 부분 성공 | 일부 row 저장 후 Run만 성공 처리되지 않는지 확인 |
+| 재실행 | 동일 run date와 data date의 중복·잔존 row 확인 |
+| Transaction | delete, insert, upsert와 상태 갱신의 commit 경계 확인 |
+| Feature 누락 | 누락값을 실제 0값으로 오인하지 않는지 확인 |
+| Position 정합 | Strategy Position과 Broker Position의 ticker·수량 비교 |
+| 상태 문자열 | BUY, BLOCK, HOLD, SELL, SKIP과 reason 의미 유지 |
+| 버전 | Evaluator Version과 Engine Version 보존 |
 
-## 검증
+현재 구현이 모든 부분 실패를 자동 차단한다고 README만으로 단정하지 않는다. 실제 변경이나 장애 분석에서는 entrypoint와 repository의 예외 전파, commit과 최종 상태 처리까지 확인해야 한다.
 
-문서만 수정한 경우에는 변경 범위만 확인한다.
+## 14. 문서 구조
+
+| 문서 | 역할 |
+|---|---|
+| `AGENTS.md` | Kiro 작업 범위, 안전, 데이터 계약과 검증 규칙 |
+| `README.md` | 현재 서비스 구조, 흐름, 실행·설정과 운영 위치 |
+| `CHANGELOG.md` | 주요 변경 이력과 당시 사실 |
+| `docs/source-file-catalog.md` | 운영상 중요한 파일의 역할, 입출력과 변경 영향 |
+
+파일 책임, entrypoint, DB 접근, Common 의존성 또는 운영 wrapper가 바뀌면 README와 `docs/source-file-catalog.md`를 함께 확인한다. 날짜별 worklog 문서는 새로 만들지 않는다.
+
+## 15. 안전한 검증 범위
+
+문서만 수정한 경우에는 변경 파일과 diff 범위만 확인한다.
 
 ```powershell
 git status --short
 git diff --stat
 ```
 
-코드 수정 시에도 실제 daily signal, backtest/research, execution/order 생성, DB 쓰기, 외부 API, 크롤링, 주문 실행이 포함되지 않는 검증만 선택한다. 실행 위험이 있으면 완료 보고에 검증 한계를 남긴다.
+코드 변경 시에도 실제 Daily Signal, Position Signal, backtest, DB 쓰기, 외부 API, AWS와 주문 실행이 없는 검증을 우선한다. 운영 실행이 필요한 검증은 자동 수행하지 않고 남은 검증으로 보고한다.

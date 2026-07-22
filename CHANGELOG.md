@@ -1,88 +1,185 @@
 # CHANGELOG
 
+`port_strategy_decision`의 기능, 데이터 계약, 실행 구조와 문서 기준 변경 이력을 기록한다.
+
+- 최신 변경을 위에 배치한다.
+- 기능 변경과 문서 정비를 구분한다.
+- 민감정보와 일회성 운영값은 기록하지 않는다.
+- 날짜별 worklog는 새로 만들지 않고 주요 변경은 이 문서에 남긴다.
+
+## 2026-07-22
+
+### Decision 문서 기준 재정비
+
+| 항목 | 값 |
+|---|---|
+| 변경 범위 | `AGENTS.md`, `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` 문서 정합성 정비 |
+| 기능 변경 | 없음 |
+| 코드·설정 변경 | 없음 |
+| DB·AWS 실행 | 없음 |
+| 운영 데이터 변경 | 없음 |
+
+### AGENTS.md
+
+| 항목 | 변경 내용 |
+|---|---|
+| 최우선 규칙 | 가독성, 2열 표, 긴 셀 분리와 문서 중복 방지 기준을 문서 앞부분에 배치 |
+| 작업 범위 | `port_strategy_decision` 내부 작업과 다른 MS read-only 원칙을 명확화 |
+| 책임 경계 | Decision과 Crawler, Preprocessor, StrategyExecution, MarketConnector, View, Research의 책임을 분리 |
+| Daily Buy | feature loading, market, filter, sizing, BUY signal과 BLOCK watch 흐름을 구분 |
+| Position | v1·v2 evaluator와 HOLD·SELL·SKIP 판단 책임을 구분 |
+| 데이터 계약 | total feature 입력과 daily run, signal, watch, position decision 출력 계약을 정리 |
+| Common 계약 | public 함수, dataclass, enum, 상태값과 reason 문자열 변경 제한을 명시 |
+| DB 안전 | unique key, upsert, delete 범위, transaction과 재실행 영향 확인 기준을 추가 |
+| 상태 안전 | 부분 성공, 예외 후 성공 처리와 중복 저장 방지 원칙을 추가 |
+| 실행 제한 | daily signal, backtest, DB 쓰기, AWS, 주문과 외부 호출 금지 범위를 구체화 |
+| 문서 연동 | 파일 책임이 바뀌면 `docs/source-file-catalog.md`도 함께 갱신하도록 명시 |
+| Worklog | 날짜별 worklog 신규 생성 금지로 현행 문서 운영 기준을 변경 |
+
+### README.md
+
+| 항목 | 변경 내용 |
+|---|---|
+| 문서 목적 | 작업 규칙보다 현재 구조와 운영 AS-IS 설명에 집중하도록 재구성 |
+| 서비스 요약 | 계층, 주요 입력, 출력, 진입점과 외부 의존성을 첫 요약 표에 배치 |
+| Daily Buy 흐름 | total feature에서 market, filter, sizing, BUY 또는 BLOCK watch로 이어지는 흐름을 정리 |
+| Position 흐름 | daily run, active position, broker snapshot과 feature를 결합한 HOLD·SELL·SKIP 흐름을 정리 |
+| BUY·SELL 의미 | Decision 산출물과 실제 주문 제출 책임이 다름을 명확화 |
+| 입력 계약 | market feature, stock feature, universe와 broker snapshot의 역할을 분리 |
+| 출력 계약 | daily run, signal, block watch, position decision과 position state를 구분 |
+| 파일 구조 | 중첩 장문 목록을 역할별 2열 표 중심으로 재구성 |
+| Common 의존성 | market, filter, sizing, guard와 sell 재사용 지점을 정리 |
+| AWS 위치 | Paper Daily Step 6과 Step 7에서의 실행 위치를 구분 |
+| 컨테이너 | 기본 CMD, command override, Common vendoring과 배포 책임을 정리 |
+| DB 설정 | `INTEREST_DB_*`, 기본 DB와 search path 설명을 표 중심으로 정리 |
+| 상태 주의 | 부분 성공, 재실행, 누락 feature, transaction과 최신성 주의사항을 보강 |
+| 문서 체계 | AGENTS, README, CHANGELOG와 source catalog의 역할을 구분 |
+
+### docs/source-file-catalog.md
+
+| 항목 | 변경 내용 |
+|---|---|
+| 구성 기준 | 파일별 장문 목록을 흐름, 입출력, DB 영향과 실행 위험 중심으로 유지 |
+| 갱신 조건 | 파일, entrypoint, table, Common과 Docker 변경 시 catalog 연동 기준 명시 |
+| Worklog | 날짜별 worklog 미생성 유지, `docs`에는 source catalog만 유지 |
+
+### 실제 코드 대조 반영
+
+| 항목 | 변경 내용 |
+|---|---|
+| `stock_universe` | Daily 입력 역할을 company_name 보강용 LEFT JOIN 대상으로 정정 |
+| `connector_balance_snapshot` | Daily Buy 가용 현금 입력이 아니라 Position 평가의 최신 broker snapshot 기준일 확인 역할로 정정 |
+| Daily Buy 처리 | `daily_buy_signal_run` 실행 흐름 설명에서 미호출 guard 단계를 제외 |
+
+### 문서 운영 결정
+
+| 항목 | 값 |
+|---|---|
+| 신규 worklog | 생성하지 않음 |
+| 과거 worklog 기록 | 당시 변경 사실이므로 CHANGELOG에서 보존 |
+| 상세 파일 책임 | `docs/source-file-catalog.md`에서 관리 |
+| 실제 코드 대조 | entrypoint, loader, repository와 evaluator 정적 확인으로 4개 문서 정합성 점검 완료 |
+| 민감정보 | 원문 기록 금지 |
+| 일회성 운영값 | CHANGELOG 기록 대상에서 제외 |
+
 ## 2026-07-01
 
-### Added
+### AWS 운영 위치와 책임 경계 문서화
 
-- README에 Decision 책임 경계, AWS 운영 구조에서의 Decision 위치, 컨테이너 이미지 섹션을 추가했다.
-- README 실행 예시를 `python -m port_strategy_decision.xxx` 형식으로 정정해 Dockerfile CMD 및 실제 import 구조와 맞췄다.
-- `docs/source-file-catalog.md`에 `Dockerfile`, `requirements.txt` 항목과 파일별 실행 위험 요약을 추가했다.
-- `docs/worklog/2026-07-01.md`에 이번 문서 최신화 작업 기록을 추가했다.
+| 항목 | 변경 내용 |
+|---|---|
+| README | Decision 책임 경계, AWS 운영 위치와 컨테이너 이미지 설명 추가 |
+| 실행 형식 | 실행 예시를 `python -m port_strategy_decision.<module>` 형식으로 정정 |
+| Step 6 | Daily Buy Signal 진입점을 `daily_buy_signal_run.py` 기준으로 정리 |
+| Step 7 | Position Signal 진입점을 `daily_position_signal_run.py`와 v1·v2 evaluator 기준으로 정리 |
+| 서비스 경계 | Preprocessor, StrategyExecution, MarketConnector, View, Research, Scheduler와의 책임 분리 |
+| Source catalog | `Dockerfile`, `requirements.txt`와 파일별 실행 위험 추가 |
+| Worklog | 당시 문서 운영 기준에 따라 `docs/worklog/2026-07-01.md` 생성 |
 
-### Changed
+### 작업 범위
 
-- AWS Paper Daily Step 6 Daily Buy Signal에서 Decision이 담당하는 진입점을 `daily_buy_signal_run.py` 기준으로 문서화했다.
-- AWS Paper Daily Step 7 Position Signal에서 Decision이 담당하는 진입점을 `daily_position_signal_run.py`와 v1/v2 evaluator 기준으로 문서화했다.
-- Decision과 Preprocessor, StrategyExecution, MarketConnector, View, StrategyResearch, Scheduler/Step Functions 사이의 실행 책임 경계를 README에 정리했다.
-
-### Notes
-
-- 실제 daily signal 실행, backtest/research 실행, execution order 생성, DB DDL/DML, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
-- port-view/.kiro 하위 View, MarketConnector, Crawler, Preprocessor, StrategyExecution, StrategyResearch, Scheduler, Lambda, Step Functions 세부 운영 로그는 이 저장소 문서 범위 밖으로 판단해 반영하지 않았다.
-- 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id, IAM role ARN, secret ARN, DB host/port/user/password, 계좌번호 전체값, broker order number 전체값은 문서에 원문으로 기록하지 않았다.
-- 코드/설정 파일 변경 없이 md 문서만 갱신했다.
+| 항목 | 값 |
+|---|---|
+| 기능 변경 | 없음 |
+| 코드·설정 변경 | 없음 |
+| 실제 실행 | daily signal, backtest, execution order, DB DDL·DML, 외부 API, 크롤링과 주문 실행 없음 |
+| 외부 MS 기록 | 이 저장소 범위 밖의 세부 운영 로그는 반영하지 않음 |
+| 민감정보 | AWS 식별자, DB 접속값, 계좌와 주문번호 원문 기록 없음 |
 
 ## 2026-05-28
 
-### Added
+### 파일 카탈로그와 코드 설명 정비
 
-- 전체 파일 역할과 운영 주의사항을 정리한 `docs/source-file-catalog.md`를 추가했다.
-- Python 소스 파일에 모듈 단위 한글 docstring과 핵심 파이프라인/DB 함수 설명을 추가했다.
-- `docs/worklog/2026-05-28.md`에 이번 문서화/주석 정리 작업 기록을 추가했다.
+| 항목 | 변경 내용 |
+|---|---|
+| Source catalog | 전체 파일 역할과 실행 주의사항을 정리한 `docs/source-file-catalog.md` 추가 |
+| Python 설명 | 모듈 단위 한글 docstring과 핵심 파이프라인·DB 함수 설명 추가 |
+| Backtest snapshot | `backtest_decision_run.py`에서 Common run store 의존성과 run 생성 호출 제거 |
+| 실행 의미 | 단일 일자 market, filter와 sizing snapshot 출력 entrypoint로 정리 |
+| 문서 정합성 | README와 source catalog에 DB feature 조회 기반 snapshot임을 반영 |
+| 로컬 경로 | 파일 상단 로컬 절대 경로 주석을 모듈 역할 docstring으로 교체 |
+| Worklog | 당시 문서 운영 기준에 따라 `docs/worklog/2026-05-28.md` 생성 |
 
-### Changed
+### 작업 범위
 
-- `backtest_decision_run.py`에서 Common run store 의존성과 run 기록 생성 호출을 제거하고, 단일 일자 market/filter/sizing snapshot 출력 entrypoint로 정리했다.
-- README와 `docs/source-file-catalog.md`에 `backtest_decision_run.py`가 run id를 출력하지 않고 DB feature 조회 기반 snapshot만 출력한다는 내용을 반영했다.
-- README에 파일 카탈로그 위치와 문서화/주석 정리 시 기능 로직을 변경하지 않는 원칙을 보강했다.
-- 기존 파일 상단의 로컬 절대 경로 주석은 모듈 역할 설명 docstring으로 대체했다.
-
-### Notes
-
-- 기능 변경 없음.
-- 실제 DB 접속, daily signal 실행, backtest/research 실행, execution order 생성, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
-- 민감정보 값은 문서와 주석에 기록하지 않았다.
+| 항목 | 값 |
+|---|---|
+| Decision 기능 변경 | `backtest_decision_run.py`의 Common run 기록 의존 제거 |
+| 실제 DB·운영 실행 | 없음 |
+| 민감정보 | 문서와 주석에 기록하지 않음 |
 
 ## 2026-05-27
 
-### Changed
+### DB 설정과 schema 구조 정비
 
-- DB 접속 설정을 로컬 `db_config.py`의 `get_db_config()`로 외부화하고 `INTEREST_DB_*` 환경변수 기반으로 정리했다.
-- password 하드코딩 후보를 제거하고 `INTEREST_DB_PASSWORD` 필수 검증으로 변경했다.
-- 로컬 PostgreSQL 기본 DB명을 `interest_crawler`에서 `portfolio`로 변경한 내용을 문서에 반영했다.
-- AWS Migration 준비 관점의 단일 DB `portfolio` + schema-per-domain 구조와 decision 모듈 `search_path`를 문서화했다.
-- schema-per-domain 전환 후에도 기존 SQL은 `search_path` 기반으로 동작한다는 설명을 추가했다.
+| 항목 | 변경 내용 |
+|---|---|
+| DB 설정 | 로컬 `db_config.py`의 `get_db_config()`로 접속 설정 외부화 |
+| 환경변수 | `INTEREST_DB_*` 기반 설정으로 정리 |
+| Password | 하드코딩 후보 제거와 `INTEREST_DB_PASSWORD` 필수 검증 적용 |
+| 기본 DB | 로컬 기본 DB명을 `interest_crawler`에서 `portfolio`로 변경 |
+| Schema 구조 | 단일 DB `portfolio`와 domain별 schema 구조 문서화 |
+| Search path | Decision 모듈의 schema 탐색 순서를 문서화 |
+| SQL 호환 | 기존 SQL이 search path 기반으로 동작하는 구조를 유지 |
 
-### Notes
+### 작업 범위
 
-- 실제 DB 접속, daily signal 실행, backtest/research 실행, execution order 생성, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
-- 민감정보 값은 문서에 기록하지 않았다.
+| 항목 | 값 |
+|---|---|
+| 실제 DB 실행 | 없음 |
+| Daily·Backtest 실행 | 없음 |
+| 외부 호출·주문 | 없음 |
+| 민감정보 | 원문 기록 없음 |
 
 ## 2026-05-26
 
-### Added
+### 초기 문서와 로컬 후보 정리
 
-- 초기 프로젝트 문서 초안을 추가했다.
-  - `AGENTS.md`
-  - `README.md`
-  - `docs/worklog/2026-05-26.md`
+| 항목 | 변경 내용 |
+|---|---|
+| 초기 문서 | `AGENTS.md`, `README.md`와 당시 worklog 초안 추가 |
+| 캐시 정리 | Python `__pycache__/` 산출물 정리 |
+| 테스트 후보 | ignored 상태의 로컬 test·debug 후보 9개 정리 |
+| 보존 파일 | `backtest_decision_run.py`, `daily_validator.py`는 삭제하지 않고 보류 후보로 유지 |
 
-### Removed
+### 정리한 로컬 test·debug 후보
 
-- ignored 상태의 로컬 test/debug 후보 파일 9개와 Python 캐시 산출물 `__pycache__/`를 정리했다.
-  - `test_compare_common_buy_filter.py`
-  - `test_compare_common_buy_sizing.py`
-  - `test_compare_common_buy_toxic_guard.py`
-  - `test_compare_common_market.py`
-  - `test_compare_common_sell_logic.py`
-  - `test_compare_daily_position_v1_v2.py`
-  - `test_daily_buy_toxic_haircut.py`
-  - `test_daily_position_v1_v2_synthetic.py`
-  - `test_debug_daily_buy_toxic.py`
-- 보류 대상으로 분류한 `backtest_decision_run.py`, `daily_validator.py`는 삭제하지 않았다.
+| 파일 | 처리 |
+|---|---|
+| `test_compare_common_buy_filter.py` | 정리 |
+| `test_compare_common_buy_sizing.py` | 정리 |
+| `test_compare_common_buy_toxic_guard.py` | 정리 |
+| `test_compare_common_market.py` | 정리 |
+| `test_compare_common_sell_logic.py` | 정리 |
+| `test_compare_daily_position_v1_v2.py` | 정리 |
+| `test_daily_buy_toxic_haircut.py` | 정리 |
+| `test_daily_position_v1_v2_synthetic.py` | 정리 |
+| `test_debug_daily_buy_toxic.py` | 정리 |
 
-### Notes
+### 작업 범위
 
-- 현재 로컬 파일 구조와 스크립트 import/entrypoint 확인 결과를 기준으로 작성했다.
-- 실제 daily signal 실행, backtest/research 실행, execution order 생성, DB DDL/DML, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
-- 민감정보 값은 문서에 기록하지 않았다.
+| 항목 | 값 |
+|---|---|
+| 작성 기준 | 당시 로컬 파일 구조와 import·entrypoint 확인 결과 |
+| 실제 실행 | daily signal, backtest, execution order, DB, 외부 API, 크롤링과 주문 실행 없음 |
+| 민감정보 | 원문 기록 없음 |
