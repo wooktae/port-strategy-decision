@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2026-07-01
+
+### Added
+
+- README에 Decision 책임 경계, AWS 운영 구조에서의 Decision 위치, 컨테이너 이미지 섹션을 추가했다.
+- README 실행 예시를 `python -m port_strategy_decision.xxx` 형식으로 정정해 Dockerfile CMD 및 실제 import 구조와 맞췄다.
+- `docs/source-file-catalog.md`에 `Dockerfile`, `requirements.txt` 항목과 파일별 실행 위험 요약을 추가했다.
+- `docs/worklog/2026-07-01.md`에 이번 문서 최신화 작업 기록을 추가했다.
+
+### Changed
+
+- AWS Paper Daily Step 6 Daily Buy Signal에서 Decision이 담당하는 진입점을 `daily_buy_signal_run.py` 기준으로 문서화했다.
+- AWS Paper Daily Step 7 Position Signal에서 Decision이 담당하는 진입점을 `daily_position_signal_run.py`와 v1/v2 evaluator 기준으로 문서화했다.
+- Decision과 Preprocessor, StrategyExecution, MarketConnector, View, StrategyResearch, Scheduler/Step Functions 사이의 실행 책임 경계를 README에 정리했다.
+
+### Notes
+
+- 실제 daily signal 실행, backtest/research 실행, execution order 생성, DB DDL/DML, 외부 API 호출, 크롤링, 주문 실행은 수행하지 않았다.
+- port-view/.kiro 하위 View, MarketConnector, Crawler, Preprocessor, StrategyExecution, StrategyResearch, Scheduler, Lambda, Step Functions 세부 운영 로그는 이 저장소 문서 범위 밖으로 판단해 반영하지 않았다.
+- 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id, IAM role ARN, secret ARN, DB host/port/user/password, 계좌번호 전체값, broker order number 전체값은 문서에 원문으로 기록하지 않았다.
+- 코드/설정 파일 변경 없이 md 문서만 갱신했다.
+
 ## 2026-05-28
 
 ### Added

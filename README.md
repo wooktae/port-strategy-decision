@@ -42,6 +42,64 @@
 - broker position snapshot, strategy position state, stock/market feature를 결합한 daily position decision 생성
 - v2 evaluator에서 common sell 판단을 daily 계층에 맞게 adapter 처리
 
+## 책임 경계
+
+이 저장소는 daily decision 계층에만 책임을 둔다. 다른 마이크로서비스가 담당하는 영역은 여기서 처리하지 않고, 계약 지점에서 입력/출력으로만 연결한다.
+
+Decision이 직접 담당하는 범위:
+
+- Preprocessor가 저장한 `pre_total_market_daily_feature`, `pre_total_stock_daily_feature`를 읽어 판단 입력을 구성
+- `port_strategy_common`의 market/filter/sizing/guard/sell 로직을 daily 운영 입력/출력에 맞게 adapter 처리
+- market signal, base exposure, max positions, min score/flow 판단 결과 저장
+- 매수 후보 필터와 sizing 결과를 daily BUY signal로 `strategy_daily_run`, `strategy_daily_signal`에 저장
+- 시장이 BLOCK이면 BUY signal 생성을 막고 `strategy_block_watch_candidate`에 관찰 후보만 저장
+- 활성 포지션과 broker snapshot, stock/market feature를 결합해 HOLD/SELL/SKIP decision을 `strategy_daily_position_decision`에 저장하고 `strategy_position_state` 최신 평가 갱신
+- daily position v2에서 `common_evaluate_backtest_sell` 결과를 daily decision 형식으로 mapping
+
+Decision이 직접 담당하지 않는 범위:
+
+- 외부 데이터 수집(Crawler 책임)
+- raw 데이터 전처리와 total feature 생성(Preprocessor 책임)
+- daily signal을 소비해 execution plan을 만들고 주문 요청을 구성하는 흐름(StrategyExecution 책임)
+- KIS 등 broker API 주문 제출, 체결 동기화, 잔고 및 보유 snapshot refresh(MarketConnector 책임)
+- backtest 시나리오 실행과 report 생성(StrategyResearch 책임)
+- 실행 상태 조회 UI, 승인 UI, 화면 렌더링(View 책임)
+- daily batch 전체 orchestration(EventBridge Scheduler와 Step Functions 책임)
+
+## AWS 운영 구조에서의 Decision 위치
+
+이 저장소는 AWS Paper 운영에서 daily 판단 실행 대상으로 사용된다. 상세한 Step Functions state, Scheduler 라인업, Lambda 내부 구현은 각 담당 저장소 문서에서 관리한다. 여기서는 Decision 관점의 책임 범위만 정리한다.
+
+- AWS Paper Daily Step 6 Daily Buy Signal
+  - `daily_buy_signal_run.py`가 실행 대상이며, run date와 data date를 기준으로 total feature를 읽어 market/filter/sizing을 수행하고 BUY signal과 BLOCK watch 후보를 저장한다.
+  - `daily_feature_loader.py`, `daily_signal_builder.py`, `daily_repository.py`가 입력 조회와 signal 저장을 담당한다.
+  - market이 BLOCK이면 `daily_block_watch_builder.py`와 `daily_block_watch_repository.py`로 watch candidate 흐름이 실행된다.
+- AWS Paper Daily Step 7 Position Signal
+  - `daily_position_signal_run.py`가 실행 대상이며, 최신 완료 daily run과 활성 포지션을 읽어 evaluator v1/v2로 HOLD/SELL/SKIP decision을 생성한다.
+  - `daily_position_evaluator.py`는 daily 운영 v1 기준을, `daily_position_evaluator_v2.py`는 daily 검증 선처리 + common sell 재사용 기준을 담당한다.
+  - `daily_position_repository.py`가 active position, broker snapshot, feature 조회와 decision/position state 저장을 담당한다.
+- 실행 컨테이너
+  - Decision은 ECS RunTask 또는 동일한 컨테이너 이미지 실행 대상으로 사용될 수 있다. `Dockerfile`이 daily 실행 이미지 정의이며, 기본 CMD로 `python -m port_strategy_decision.daily_buy_signal_run`을 실행한다.
+  - Step Functions에서 다른 진입점(`daily_position_signal_run`)이 필요하면 command override로 지정한다. 실제 cluster 이름, task definition ARN, image URI, subnet, security group, command id는 문서에 원문으로 기록하지 않는다.
+
+각 서비스 사이의 실행 책임 경계는 다음과 같다.
+
+- Scheduler와 Step Functions: 실행 orchestration
+- Preprocessor: Decision 입력 feature 생성
+- Decision: feature 기반 판단과 signal/decision 저장
+- StrategyExecution: Decision 산출물을 실행 계획과 주문 후보로 넘기는 후속 처리
+- MarketConnector: 실제 broker API와 주문/체결/잔고
+- View: 실행 상태 조회 및 trigger UI(Decision 내부 실행 책임 아님)
+- StrategyResearch: backtest 시나리오와 연구 산출물
+
+## 컨테이너 이미지
+
+`Dockerfile`은 Python 3.13 slim 기반이며, `port_strategy_common`을 함께 vendoring해서 ECS RunTask 실행 이미지로 사용한다. 이 vendoring은 AWS smoke 단계의 임시 조치이며 `port_strategy_common`의 정식 패키징/버저닝이 정리되면 교체 대상이다.
+
+- 기본 CMD: `python -m port_strategy_decision.daily_buy_signal_run`
+- 다른 진입점 실행이 필요하면 컨테이너 실행 시 command override로 지정한다.
+- 이미지 build/push, ECR URI, task definition 등록은 이 저장소의 책임 범위가 아니며 배포 파이프라인 저장소에서 관리한다.
+
 ## port_strategy_common 의존성
 
 이 저장소는 판단 핵심 로직 상당 부분을 `port_strategy_common`에서 가져온다.
@@ -70,12 +128,15 @@
 
 각 스크립트는 독립 실행형 entrypoint를 가진 파일이 있다. 다만 실행 시 DB 연결, signal/decision upsert, position state 갱신, 주문 후보로 이어질 수 있는 데이터 생성이 발생할 수 있으므로 운영 환경에서만 의도적으로 실행해야 한다.
 
+내부 import는 `from port_strategy_decision.xxx import ...` 형태이므로 스크립트를 직접 파일 경로로 실행하지 않고 `python -m` 형식으로 실행한다. 컨테이너 이미지 CMD도 동일한 형식을 사용한다.
+
 예시 형식:
 
 ```powershell
-python daily_buy_signal_run.py --run-date 2026-05-26 --data-date 2026-05-25
-python daily_position_signal_run.py --evaluator-version v2
-python daily_validator.py
+python -m port_strategy_decision.daily_buy_signal_run --run-date 2026-05-26 --data-date 2026-05-25
+python -m port_strategy_decision.daily_position_signal_run --evaluator-version v2
+python -m port_strategy_decision.daily_position_signal_run --validate-only
+python -m port_strategy_decision.daily_validator
 ```
 
 문서화/분석 작업 중에는 위 명령을 실행하지 않는다. `backtest_decision_run.py`도 run 기록은 생성하지 않지만 DB feature 조회를 수행하므로 backtest/research 금지 범위에서는 실행하지 않는다.

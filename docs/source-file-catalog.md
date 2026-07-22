@@ -106,6 +106,30 @@
 - 주요 역할: decision 모듈의 `psycopg2.connect` 설정을 중앙화한다.
 - 수정/운영 시 주의사항: password 기본값을 두지 않는다. 민감정보 값은 문서/로그에 쓰지 않고 환경변수 또는 로컬 설정에서 주입한다.
 
+## 컨테이너/의존성 파일
+
+### `Dockerfile`
+- 한글 제목: Decision 실행 컨테이너 정의
+- 파일 내용: Python 3.13 slim 이미지를 기반으로 `port_strategy_common`과 `port_strategy_decision`을 함께 vendoring하고 기본 CMD로 `python -m port_strategy_decision.daily_buy_signal_run`을 실행한다.
+- 주요 역할: ECS RunTask 또는 동일한 컨테이너 실행 대상에서 daily 진입점을 실행하기 위한 이미지 정의를 제공한다.
+- 수정/운영 시 주의사항: `port_strategy_common` vendoring은 AWS smoke 단계 임시 조치라는 주석을 유지한다. 이미지 build/push, ECR URI, task definition 등록은 이 저장소의 책임 범위가 아니며 실제 URI/ARN 값을 문서에 원문으로 기록하지 않는다.
+
+### `requirements.txt`
+- 한글 제목: Python 의존성 목록
+- 파일 내용: 현재는 `psycopg2-binary`만 명시한다.
+- 주요 역할: 컨테이너 이미지 build 시 pip 설치 대상 목록을 제공한다.
+- 수정/운영 시 주의사항: `port_strategy_common`은 requirements에 등록되어 있지 않고 Dockerfile에서 vendoring된다. 정식 패키징 전에는 임의로 추가하지 않는다.
+
+## 실행 위험 요약
+
+파일별로 daily 운영 실행 시 발생할 수 있는 부작용을 다음과 같이 분류한다. 문서화/정리 작업 중에는 어느 항목이든 실행하지 않는다.
+
+- `strategy_daily_run`, `strategy_daily_signal` 저장으로 이어질 수 있는 파일: `daily_buy_signal_run.py`, `daily_repository.py`, `daily_signal_builder.py`, `daily_feature_loader.py`
+- `strategy_block_watch_candidate` 저장/삭제로 이어질 수 있는 파일: `daily_buy_signal_run.py`, `daily_block_watch_builder.py`, `daily_block_watch_repository.py`
+- `strategy_daily_position_decision` 저장과 `strategy_position_state` latest 평가 갱신으로 이어질 수 있는 파일: `daily_position_signal_run.py`, `daily_position_repository.py`, `daily_position_evaluator.py`, `daily_position_evaluator_v2.py`
+- execution/order 생성으로 이어질 수 있는 산출물을 만드는 상위 흐름: BUY signal과 position decision 저장이 곧 execution 계층 입력이 되므로 위 파일 실행은 후속 주문 흐름 트리거가 될 수 있다.
+- DB feature 조회만 수행하지만 실행 금지 범위인 검증/조회 후보: `backtest_decision_run.py`, `daily_validator.py`
+
 ## 문서 파일
 
 ### `AGENTS.md`
