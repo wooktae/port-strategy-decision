@@ -36,6 +36,11 @@
 | `db_config.py` | `INTEREST_DB_*` 환경변수와 Decision DB 연결 설정 관리 |
 | `requirements.txt` | 컨테이너에서 설치할 Python dependency 목록 |
 | `Dockerfile` | Daily Decision 컨테이너 이미지와 기본 CMD 정의 |
+| `.dockerignore` | 이미지 build 컨텍스트 제외 규칙 |
+| `pytest.ini` | pytest 설정 |
+| `.github/workflows/` | GitHub Actions → CodeBuild 트리거 |
+| `.devops/` | CI buildspec과 smoke script |
+| `tests/` | import·evaluator version contract 테스트 |
 
 ### 3.1 `__init__.py`
 
@@ -63,7 +68,7 @@
 | 항목 | 값 |
 |---|---|
 | 현재 명시 dependency | `psycopg2-binary` |
-| Common 처리 | `port_strategy_common`은 requirements가 아니라 이미지 build 과정에서 포함 |
+| Common 처리 | `port_strategy_common`은 requirements가 아니라 Docker build 시 1.0.0 Wheel로 설치 |
 | 변경 영향 | 이미지 build와 runtime import |
 | 주의 | 실제 import 확인 없이 dependency를 임의 추가·삭제하지 않음 |
 
@@ -73,11 +78,46 @@
 |---|---|
 | 기반 이미지 | Python 3.13 slim |
 | 포함 대상 | `port_strategy_common`, `port_strategy_decision` |
+| Common 설치 | `.devops/packages`의 1.0.0 Wheel을 `--no-deps` 설치 |
 | 기본 CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
 | 다른 진입점 | 실행 시 command override 사용 가능 |
 | 운영 위치 | ECS RunTask 또는 동일 컨테이너 실행 대상 |
 | 저장소 경계 | ECR push와 task definition 등록은 배포 영역 |
 | 주의 | 실제 URI, ARN, subnet, security group을 문서에 기록하지 않음 |
+
+### 3.5 CI·배포 구성
+
+| 파일 | 역할 |
+|---|---|
+| `.github/workflows/decision-codebuild.yml` | `workflow_dispatch`로 CodeBuild 시작·상태 대기 |
+| `.devops/codebuild/buildspec.yml` | 품질 게이트, Common Wheel download, Docker build, 선택적 ECR push |
+| `.devops/scripts/container-smoke.py` | import-only smoke, DB 연결·run 함수 미호출 |
+| `.devops/scripts/entrypoint-smoke.py` | argparse `--help` 경로만 실행하는 entrypoint smoke |
+| `.dockerignore` | 이미지 build 컨텍스트 제외 규칙 |
+
+| 항목 | 값 |
+|---|---|
+| 인증 | GitHub OIDC |
+| Common Wheel | CodeArtifact 1.0.0 Wheel을 `.devops/packages`에 준비 |
+| Wheel 추적 | `.devops/packages/*.whl`은 git-ignore된 빌드 산출물 |
+| ECR push | `PUSH_IMAGE=true`에서만 수행 |
+| 실행 위험 | buildspec은 AWS·Docker 호출 포함, 문서 작업 중 실행하지 않음 |
+| 민감정보 | Account ID, ARN, 전체 Digest, CodeArtifact 전체 식별자 미기록 |
+
+### 3.6 테스트
+
+| 파일 | 역할 |
+|---|---|
+| `pytest.ini` | pytest 설정 |
+| `tests/conftest.py` | flat 레이아웃용 `port_strategy_decision` 패키지 등록 |
+| `tests/test_import_contract.py` | Decision·Common 모듈 import 계약 (DB·run 미호출) |
+| `tests/test_position_version_contract.py` | Evaluator version 기본 v1, 지원 {v1,v2} 계약 |
+
+| 항목 | 값 |
+|---|---|
+| 성격 | side effect 없는 정적 계약 검증 |
+| 실행 위험 | DB·주문·AWS 미접근 |
+| 연동 | buildspec Unit·Contract Test 단계 |
 
 ## 4. Daily Buy Signal
 
@@ -106,7 +146,8 @@ Daily Buy 흐름은 feature를 읽고 market, filter와 sizing을 수행한 뒤 
 | 상태 처리 | Daily run lifecycle 갱신 |
 | DB 영향 | 조회와 쓰기 |
 | 후속 영향 | StrategyExecution이 소비할 signal 생성 가능 |
-| 실행 위험 | 실제 운영 데이터 변경 |
+| 실행 모드 | 운영 모드와 read-only `--shadow` 모드 (write_count=0, JSON) |
+| 실행 위험 | 운영 모드는 실제 운영 데이터 변경 |
 | 주의 | 문서화·정적 분석 중 실행하지 않음 |
 
 ### 4.2 `daily_feature_loader.py`
@@ -258,12 +299,13 @@ Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과
 |---|---|
 | 책임 | Position 조회, 평가, 저장과 요약 orchestration |
 | 주요 입력 | 최신 완료 run, active position, broker snapshot과 feature |
-| Evaluator | v1 또는 v2 |
+| Evaluator | v1 또는 v2, 운영 기본 v1 |
+| 실행 모드 | 운영 모드와 read-only `--shadow` 모드 (write_count=0, JSON) |
 | 주요 출력 | HOLD, SELL, SKIP decision |
 | DB 영향 | 조회와 쓰기 |
 | 상태 영향 | `strategy_position_state` 최신 평가 갱신 |
 | 후속 영향 | StrategyExecution의 매도 판단 입력 가능 |
-| 실행 위험 | 운영 position decision 변경 |
+| 실행 위험 | 운영 모드는 position decision 변경 |
 | 주의 | 문서화·정적 분석 중 실행하지 않음 |
 
 ### 8.2 `daily_position_evaluator.py`
@@ -412,7 +454,7 @@ Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과
 | Enum·상태값 | Downstream 호환 확인 |
 | Reason 문자열 | 저장 데이터와 화면·실행 계층 영향 확인 |
 | Config | Default와 snapshot 호환 확인 |
-| Vendoring | 정식 패키징 전 Dockerfile 방식과 일치 유지 |
+| Wheel 설치 | 1.0.0 Wheel 설치 방식과 Dockerfile·buildspec 일치 유지 |
 
 ## 13. AWS와 운영 위치
 
@@ -424,7 +466,7 @@ Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과
 | 실행 방식 | ECS RunTask 또는 동일 컨테이너 |
 | 기본 이미지 CMD | Daily Buy Signal |
 | Position 실행 | Command override 필요 |
-| 저장소 증거 | Dockerfile과 Python entrypoint |
+| 저장소 증거 | Dockerfile, Python entrypoint와 `.devops`·`.github` CI 구성 |
 | 외부 운영 사실 | Cluster, task definition과 Scheduler 문서에서 관리 |
 
 Repository 파일로 확인되는 구조와 실제 AWS 현재 상태를 혼동하지 않는다.
@@ -480,7 +522,8 @@ Repository 파일로 확인되는 구조와 실제 AWS 현재 상태를 혼동�
 | Table 변경 | 입력·출력 계약과 repository 책임 수정 |
 | Status 변경 | Builder, repository와 downstream 영향 수정 |
 | Common 변경 | Adapter mapping과 public 계약 수정 |
-| Docker 변경 | Runtime, vendoring과 command 수정 |
+| Docker 변경 | Runtime, Common Wheel 설치와 command 수정 |
+| CI·배포 구성 변경 | Workflow, buildspec과 smoke script 반영 |
 | 실행 위험 변경 | 읽기·쓰기·삭제·후속 영향 재분류 |
 | 문서 체계 변경 | AGENTS, README와 CHANGELOG 역할 정합성 수정 |
 

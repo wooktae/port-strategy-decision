@@ -231,6 +231,19 @@ Decision은 원천 데이터를 직접 만들지 않는다. 아래 입력을 읽
 
 문서 작업에서는 Python module import도 자동 실행이나 DB 연결 가능성을 확인하기 전에는 수행하지 않는다.
 
+### 10.1 실행 모드 안전 규칙
+
+운영 모드와 `--shadow` 모드를 명확히 구분한다.
+
+| 항목 | 기준 |
+|---|---|
+| Shadow Transaction | read-only, write count 0 계약 유지 |
+| Shadow 결과 | CloudWatch 구조화 JSON으로 출력 |
+| Shadow 연계 | StrategyExecution·주문 경로에 연결하지 않음 |
+| Family 분리 | 운영 Task Definition과 Shadow Family를 분리 |
+| 운영 Command | `--shadow`를 혼입하지 않음 |
+| Position 기본 | 운영 기본은 v1이며 Shadow v2 검증과 혼동하지 않음 |
+
 ## 11. 코드 수정 규칙
 
 - 사용자의 명시 요청 없이 Python, Dockerfile, requirements와 설정 파일을 수정하지 않는다.
@@ -269,12 +282,27 @@ Decision은 원천 데이터를 직접 만들지 않는다. 아래 입력을 읽
 
 ## 13. AWS와 컨테이너 규칙
 
-- `Dockerfile`의 base image, package path, vendoring과 CMD를 실제 파일 기준으로 확인한다.
+- `Dockerfile`의 base image, package path, Common Wheel 설치와 CMD를 실제 파일 기준으로 확인한다.
 - 기본 CMD와 Step Functions command override를 혼동하지 않는다.
 - repository 안의 Dockerfile은 실행 이미지 정의이며 배포 완료 증거가 아니다.
 - ECS RunTask, task definition, ECR image와 Step Functions 상태는 외부 운영 사실로 분리한다.
 - 실제 cluster, task definition ARN, image URI, subnet, security group, IAM role과 secret ARN을 문서에 원문으로 기록하지 않는다.
-- `port_strategy_common` vendoring이 임시 구조라면 현재 사실과 후속 과제를 구분해 기록한다.
+- `port_strategy_common`은 vendoring이 아니라 1.0.0 Wheel 설치 구조이며, `.devops/packages/*.whl`은 git-ignore된 빌드 산출물임을 구분해 기록한다.
+
+### 13.1 DevOps 검증 규칙
+
+| 항목 | 기준 |
+|---|---|
+| Source·Image 정합 | Source SHA, Image Tag와 Digest 정합 확인 |
+| PUSH_IMAGE | `false`는 품질 게이트, `true`는 ECR Push 목적으로 구분 |
+| Shadow 실행 | Shadow Standalone 실행과 Shadow State Machine 실행을 구분 |
+| 운영 승격 | Revision 등록과 활성 참조 전환을 구분 |
+| 승격 검증 | 승격·Rollback·재승격 시 관련 State Machine 전체 참조 확인 |
+| E2E 성공 | State Machine 성공, ECS Exit Code 0, 예상 Revision·Image 실행과 로그 확인 |
+| Container 판정 | `EssentialContainerExited` 문자열만으로 실패 판정하지 않고 Exit Code 확인 |
+| 범위 확인 | 운영 E2E에서 Step 8 이후와 주문 경로 미호출 확인 |
+| 결과 구분 | 결과 0건과 검증 실패를 구분 |
+| 실데이터 한계 | 실데이터 미발생 시 로직 동일성 검증 완료로 기록하지 않음 |
 
 ## 14. 보안과 민감정보
 
@@ -283,6 +311,18 @@ Decision은 원천 데이터를 직접 만들지 않는다. 아래 입력을 읽
 - 예시 값은 `[REDACTED]` 또는 명백한 placeholder를 사용한다.
 - broker order number, command id와 execution ARN 전체값을 문서에 남기지 않는다.
 - 로그나 dump에 계좌, 종목별 보유 수량과 주문 정보가 있으면 필요한 최소 사실만 요약한다.
+- 전체 ARN, IAM Role ARN, Policy ARN, Task ARN과 Execution ARN을 기록하지 않는다.
+- AWS Account ID, subnet, security group과 전체 Image Digest를 기록하지 않는다.
+- State Machine Definition 백업 등 로컬 임시 경로를 기록하지 않는다.
+- DevOps 사실은 아래 안전 수준만 사용한다.
+
+| 허용 항목 | 예 |
+|---|---|
+| Task Definition | Family와 Revision |
+| State Machine | 이름 |
+| Source | 단축 SHA |
+| Image | Tag와 단축 Digest |
+| 상태 | 성공·실패, Exit Code, Write Count |
 
 ## 15. 문서 갱신 규칙
 

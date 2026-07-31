@@ -4,7 +4,7 @@
 
 시장 상태와 매수 가능 범위를 판단하고, 종목 후보를 필터링해 수량을 계산한다. 또한 활성 포지션을 평가해 HOLD, SELL, SKIP 판단을 생성한다.
 
-이 문서는 현재 저장소의 파일 구조, import, entrypoint와 기존 운영 문서를 기준으로 작성했다. 문서 정리 과정에서는 실제 daily signal, position signal, backtest, DB 쓰기, 외부 API, AWS와 주문 실행을 수행하지 않았다.
+이 문서는 현재 저장소 파일 구조와 검증된 운영 AS-IS를 설명한다. 2026-07-31에는 승인된 DevOps 범위에서 AWS Shadow Canary와 운영 Step 6·7 E2E를 실행했다. Step 8 이후, StrategyExecution과 주문은 실행하지 않았다. 이번 문서 현행화 작업 자체에서는 추가 AWS·DB·주문 실행을 수행하지 않는다.
 
 ## 1. 서비스 요약
 
@@ -15,8 +15,10 @@
 | 주요 입력 | `pre_total_market_daily_feature`, `pre_total_stock_daily_feature` |
 | 주요 판단 | Market, Buy Filter, Sizing, BUY, BLOCK Watch, HOLD, SELL, SKIP |
 | 주요 출력 | Daily Run, Daily Signal, Block Watch Candidate, Position Decision, Position State |
-| 공통 로직 | `port_strategy_common` |
+| 공통 로직 | `port_strategy_common` 1.0.0 Wheel |
 | 운영 진입점 | `daily_buy_signal_run.py`, `daily_position_signal_run.py` |
+| 실행 모드 | 운영 모드와 read-only `--shadow` Shadow Canary 모드 |
+| CI·배포 | GitHub Actions → CodeBuild, ECR Image, ECS Task Definition Revision |
 | 상세 파일 문서 | `docs/source-file-catalog.md` |
 
 ## 2. 책임 경계
@@ -51,6 +53,8 @@ Decision은 feature를 기반으로 판단 결과를 생성하고 저장한다. 
 Decision이 SELL 판단을 만들더라도 실제 매도 주문을 제출하지 않는다. BUY Signal도 StrategyExecution이 소비하기 전까지는 주문이 아니다.
 
 ## 3. 핵심 실행 흐름
+
+운영 모드는 판단 결과를 DB에 저장한다. `--shadow` 모드는 동일 입력을 read-only로 재사용해 결과만 출력한다. 3.1~3.3은 운영 흐름이고 3.4는 Shadow Canary다.
 
 ### 3.1 Daily Buy Signal
 
@@ -107,6 +111,21 @@ v1은 daily 운영 기준을 직접 평가한다. v2는 daily 검증을 먼저 �
 | `daily_validator.py` | 최신 Daily Run과 Signal을 조회해 확인하는 검증 후보 |
 
 두 파일 모두 DB 조회가 발생할 수 있다. 문서 작업이나 단순 구조 점검 중에는 실행하지 않는다.
+
+### 3.4 Shadow Canary 실행 모드
+
+운영 진입점은 `--shadow` 옵션으로 read-only Shadow Canary 모드를 지원한다.
+
+| 항목 | 값 |
+|---|---|
+| BUY Shadow | `daily_buy_signal_run.py --shadow` |
+| Position Shadow | `daily_position_signal_run.py --shadow --evaluator-version v2` |
+| Transaction | read-only, DB write 차단 |
+| 결과 | write_count=0과 CloudWatch 구조화 JSON |
+| 입력 | 운영과 동일한 run date·data date와 Preprocessor Feature |
+| 주문 연계 | StrategyExecution·주문 경로와 연결하지 않음 |
+
+운영 Command에는 `--shadow`를 포함하지 않는다. Shadow는 동일 입력과 계산 경로를 재사용하되 결과를 저장하지 않고 JSON으로만 출력한다.
 
 ## 4. 입력 데이터
 
@@ -222,21 +241,112 @@ Decision은 AWS Paper Daily에서 판단 단계로 사용된다. Scheduler, Step
 | 출력 | Position Decision과 Position State 최신 평가 |
 | 직접 하지 않는 일 | 매도 주문 요청 생성과 broker 주문 제출 |
 
+### 8.3 Shadow Canary
+
+Shadow Canary는 2026-07-31 구성·검증이 완료된 read-only 검증 경로다.
+
+| 항목 | 값 |
+|---|---|
+| BUY Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
+| Position Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
+| Shadow Revision | 각각 `:1` |
+| BUY Shadow Command | 운영 진입점에 `--shadow` 추가 |
+| Position Shadow Command | `--shadow --evaluator-version v2` |
+| 실행 순서 | 전용 State Machine에서 BUY Shadow → Position Shadow 순차 |
+| 저장 계약 | read-only, write_count=0 |
+| 결과 | CloudWatch 구조화 JSON |
+| 주문 연계 | StrategyExecution·주문 경로와 분리 |
+
+Shadow는 "저장하지 않을 예정"이 아니라 실제 read-only 실행과 write_count=0을 검증한 상태다. 다만 실행 시점 입력이 BLOCK이고 활성 Position이 0건이어서 실데이터 기반 v1·v2 차이 검증은 제한됐다.
+
+### 8.4 운영 승격과 Rollback
+
+| 항목 | 값 |
+|---|---|
+| 운영 BUY Revision | `:3` |
+| 운영 Position Revision | `:3` |
+| 운영 Command | Shadow 옵션 없음 |
+| 신규 Image Tag | `ff4d285b87b9` |
+| 신규 Image 단축 Digest | `3be7251875f9` |
+| 참조 State Machine | Decision Revision을 참조하는 5개 운영 State Machine |
+| 검증 방식 | `:2`→`:3` 승격, `:3`→`:2` Rollback, `:2`→`:3` 재승격 |
+| 최종 상태 | 운영 5개 State Machine이 Revision `:3` 참조 |
+
+승격·Rollback·재승격은 동일 Image Digest를 재빌드 없이 사용했다. Shadow Revision은 `:1`로 유지된다.
+
+### 8.5 운영 Step 6·7 E2E 현황
+
+| 항목 | 값 |
+|---|---|
+| BUY E2E | Step 6 전용 State Machine 실행 SUCCEEDED |
+| Position E2E | Step 7 전용 State Machine 실행 SUCCEEDED |
+| 실행 Revision | 운영 BUY·Position Revision `:3` |
+| Container | 두 실행 모두 Exit Code 0 |
+| Image | 예상 Tag·Digest 일치 |
+| 로그 | CloudWatch 확인, 오류 패턴 0건 |
+| 실행 범위 | Step 6·7만 실행, Step 8 이후·StrategyExecution·주문 미실행 |
+
+이 E2E는 Decision 단계까지의 검증이며 전체 Paper Daily Step 1~17이나 주문 체결 검증이 아니다. 실행 당시 입력이 BLOCK이고 Position이 0건이어서 결과는 0건이며, 이는 검증 실패가 아니라 입력 조건에 따른 정상 결과다.
+
 실제 cluster, task definition ARN, image URI, subnet, security group, command id와 credential은 README에 기록하지 않는다.
 
-## 9. 컨테이너 이미지
+## 9. 컨테이너 이미지와 CI·배포 파이프라인
 
-`Dockerfile`은 Decision 실행 이미지를 정의한다.
+`Dockerfile`은 Decision 실행 이미지를 정의하고, `.devops`와 `.github/workflows`가 CI·배포 경로를 담당한다.
 
-| 항목 | 현재 문서 기준 |
+### 9.1 컨테이너 이미지
+
+| 항목 | 값 |
 |---|---|
 | Base Image | Python 3.13 slim |
 | 기본 CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
 | Position 실행 | 컨테이너 command override로 `daily_position_signal_run` 지정 |
-| Common 포함 | `port_strategy_common` vendoring |
+| Common 포함 | `port_strategy_common` 1.0.0 Wheel 설치 |
 | 배포 책임 | 별도 배포 파이프라인 |
 
-Common vendoring은 현재 운영 연결을 위한 방식이다. 정식 패키징과 버저닝이 도입되면 교체 여부를 다시 판단한다.
+### 9.2 `port_strategy_common` 설치 구조
+
+현재 이미지는 `port_strategy_common`을 vendoring하지 않고 검증된 1.0.0 Wheel을 설치한다.
+
+| 항목 | 값 |
+|---|---|
+| 패키지 버전 | 1.0.0 |
+| Wheel 준비 | CodeArtifact에서 받아 `.devops/packages`에 배치 |
+| 설치 시점 | Docker Build 시 `--no-deps` 설치 |
+| Wheel 추적 | `.devops/packages/*.whl`은 git-ignore된 빌드 산출물 |
+| 계약 검증 | Decision Consumer 관점의 import·계약 테스트 |
+
+CodeArtifact Domain·Repository·endpoint의 전체 식별자는 문서에 기록하지 않는다.
+
+### 9.3 CI 품질 게이트
+
+`.devops/codebuild/buildspec.yml`은 아래 품질 게이트를 순서대로 수행한다.
+
+| 단계 | 내용 |
+|---|---|
+| Python Compile | `compileall` |
+| Unit·Contract Test | `pytest` (import contract, position evaluator version contract) |
+| Static Analysis | Ruff |
+| Host Import Smoke | `.devops/scripts/container-smoke.py` |
+| Host Entrypoint Smoke | `.devops/scripts/entrypoint-smoke.py` |
+| Docker Build | 이미지 build |
+| Container Import Smoke | 컨테이너 내부 import smoke |
+| Container Entrypoint Smoke | 컨테이너 내부 entrypoint smoke |
+| ECR Push | `PUSH_IMAGE=true`일 때만 수행 |
+
+`PUSH_IMAGE=false`는 품질 게이트만 수행하고 push를 건너뛴다. `PUSH_IMAGE=true`는 검증 후 ECR push와 Digest 확인을 수행한다.
+
+### 9.4 GitHub Actions와 실행
+
+| 항목 | 값 |
+|---|---|
+| Workflow | `.github/workflows/decision-codebuild.yml` |
+| 트리거 | `workflow_dispatch` |
+| 인증 | GitHub OIDC |
+| 실행 | CodeBuild 시작과 상태 대기, 결과 판정 |
+| Source | GitHub Commit SHA를 CodeBuild Source Version으로 전달 |
+
+Entrypoint Smoke는 argparse `--help` 경로만 실행하며 DB 연결과 운영 run 함수를 호출하지 않는다.
 
 ## 10. 실행 방법
 
@@ -255,13 +365,24 @@ python -m port_strategy_decision.daily_position_signal_run `
 python -m port_strategy_decision.daily_position_signal_run `
   --validate-only
 
+python -m port_strategy_decision.daily_buy_signal_run `
+  --shadow
+
+python -m port_strategy_decision.daily_position_signal_run `
+  --shadow `
+  --evaluator-version v2
+
 python -m port_strategy_decision.daily_validator
 ```
+
+`daily_buy_signal_run`은 `--run-date`, `--data-date`, `--note`, `--shadow`를 지원한다. `daily_position_signal_run`은 `--account-no`, `--validate-only`, `--shadow`, `--evaluator-version {v1,v2}`를 지원하며 기본값은 `v1`이다.
 
 | 진입점 | 실행 영향 |
 |---|---|
 | `daily_buy_signal_run` | Daily Run, Signal과 Block Watch 데이터 생성·갱신 가능 |
+| `daily_buy_signal_run --shadow` | read-only, DB write 없이 JSON 결과 출력 |
 | `daily_position_signal_run` | Position Decision과 Position State 갱신 가능 |
+| `daily_position_signal_run --shadow` | read-only, DB write 없이 JSON 결과 출력 |
 | `daily_validator` | DB 조회와 데이터 출력 가능 |
 | `backtest_decision_run` | Run 기록은 만들지 않더라도 DB feature 조회 가능 |
 

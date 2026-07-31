@@ -7,6 +7,117 @@
 - 민감정보와 일회성 운영값은 기록하지 않는다.
 - 날짜별 worklog는 새로 만들지 않고 주요 변경은 이 문서에 남긴다.
 
+## 2026-07-31
+
+### Decision DevOps 기준선
+
+| 항목 | 값 |
+|---|---|
+| GitHub Repository | `wooktae/port-strategy-decision` |
+| 기본 브랜치 | `master` |
+| Source 정합성 | Local·Remote·CodeBuild Source SHA 일치 확인 |
+| Source 단축 SHA | `ff4d285b87b9` |
+| ECR Image Tag | `ff4d285b87b9` |
+| Image 단축 Digest | `3be7251875f9` |
+| Common 의존성 | `port_strategy_common` 1.0.0 Wheel 설치 |
+
+| CI 품질 게이트 | 내용 |
+|---|---|
+| Python Compile | `compileall` |
+| Unit·Contract Test | import contract, position evaluator version contract |
+| Static Analysis | Ruff |
+| Host Smoke | Import·Entrypoint smoke |
+| Container Smoke | Import·Entrypoint smoke |
+| Docker Build | 이미지 build |
+| ECR Push | `PUSH_IMAGE=true` 실행에서만 push |
+
+| 항목 | 값 |
+|---|---|
+| GitHub Actions | `workflow_dispatch` 트리거 |
+| 인증 | GitHub OIDC 기반 CodeBuild 실행 |
+| Source 전달 | GitHub Commit SHA를 CodeBuild Source Version으로 전달 |
+
+### Shadow Canary
+
+| 항목 | 값 |
+|---|---|
+| Family 분리 | BUY·Position 각각 운영과 분리된 Shadow Family |
+| Shadow Revision | 각각 `:1` |
+| BUY Shadow | 운영 진입점에 `--shadow` 추가 |
+| Position Shadow | `--shadow --evaluator-version v2` |
+| 저장 계약 | read-only, write_count=0 |
+| 결과 | CloudWatch 구조화 JSON |
+| State Machine | Shadow 전용 State Machine에서 BUY → Position 순차 실행 |
+| 실행 결과 | State Machine SUCCEEDED, 두 Container Exit Code 0 |
+| 주문 연계 | 운영 Step Functions·StrategyExecution·주문과 미연계 |
+
+| 항목 | 값 |
+|---|---|
+| 초기 실패 | Step Functions Role의 Shadow Family `ecs:RunTask` 권한 누락 |
+| 보완 | 운영 권한 보존 상태로 Shadow Family 권한만 최소 추가 |
+| 재실행 | 권한 보완 후 재실행 성공 |
+| Managed Policy | 기본 버전 v3 → v4 |
+| 실데이터 한계 | 입력 BLOCK·Position 0건으로 v1·v2 실차이 비교 제한, 추가 비교 필요 |
+
+1차 Shadow 결과는 Run Date·Data Date 정합 확인, Market Signal BLOCK, BUY Candidate·Signal·Block Watch 0건, 활성 Position·HOLD·SELL·SKIP 0건, Position Shadow Evaluator v2 기준 BUY·Position write_count 모두 0이었다.
+
+### 운영 승격과 Rollback
+
+| 항목 | 값 |
+|---|---|
+| 운영 BUY Revision | `:2` → `:3` 등록 |
+| 운영 Position Revision | `:2` → `:3` 등록 |
+| 운영 Command | Shadow 옵션 없음 |
+| 신규 Image | Tag `ff4d285b87b9`, 단축 Digest `3be7251875f9` |
+| 대상 State Machine | Decision Revision 참조 5개 |
+| 승격 | `:2` → `:3` 전환과 활성 참조 확인 |
+| Rollback | `:3` → `:2` 복구와 이전 Revision 참조 확인 |
+| 재승격 | `:2` → `:3` 재전환과 최종 Revision `:3` 참조 확인 |
+| Shadow 유지 | Shadow Revision `:1` 유지 |
+
+대상 5개 State Machine은 `portfolio-paper-daily-step1-11-safe`, `portfolio-paper-daily-step1-17-approval`, `portfolio-paper-daily-step6-only`, `portfolio-paper-daily-step6-step7-step8-step9-step10-step11`, `portfolio-paper-daily-step7-only`다. 승격·Rollback·재승격은 동일 Image Digest를 재빌드 없이 사용했다.
+
+### 운영 E2E
+
+| 항목 | 값 |
+|---|---|
+| BUY 실행 | `portfolio-paper-daily-step6-only` SUCCEEDED |
+| Position 실행 | `portfolio-paper-daily-step7-only` SUCCEEDED |
+| 실행 Revision | 운영 BUY·Position Revision `:3` |
+| Container | 두 실행 모두 Exit Code 0 |
+| Image | 예상 Tag·Digest 일치 |
+| 로그 | CloudWatch 확인, 오류 패턴 0건 |
+| Daily Run | Run ID 86 사용 |
+| BUY 결과 | Market Signal BLOCK, Candidate·Signal 0건 |
+| Position 결과 | 운영 Evaluator v1, Position·Decision 0건 |
+| 실행 범위 | Step 6·7만 실행, Step 8~17·StrategyExecution·주문 미실행 |
+
+이 E2E는 Decision 단계까지의 검증이다. 전체 Paper Daily Step 1~17이나 주문 체결까지 검증한 것이 아니다. 0건 결과는 입력 조건에 따른 정상 결과이며 검증 실패가 아니다.
+
+### 후속 과제
+
+| 항목 | 값 |
+|---|---|
+| 자동 비교 | 운영 DB 결과와 Shadow JSON 자동 Comparison Task (미구현) |
+| BUY 비교 | BUY 종목·수량 발생일의 실데이터 비교 |
+| Position 비교 | HOLD·SELL·SKIP 발생일의 v1·v2 실데이터 비교 |
+| 검토 | 판단 사유 차이에 대한 Decision 개발팀 검토와 승격 기준 정교화 |
+
+Comparison Task는 완료가 아니라 후속 과제다.
+
+### 작업 범위
+
+| 항목 | 값 |
+|---|---|
+| 전략 판단 로직 변경 | 없음 |
+| Shadow 실행 기능 | 진입점 `--shadow` read-only 모드 |
+| CI·Container 배포 구성 | workflow, buildspec, smoke script, contract test 추가 |
+| AWS 변경 | Task Definition Revision, Shadow·운영 State Machine, IAM 최소 권한 |
+| 운영 DB 영향 | 없음 (Shadow read-only, 운영 E2E 결과 0건) |
+| 주문 실행 | 없음 |
+| 이번 문서 작업 | `AGENTS.md`, `README.md`, `CHANGELOG.md` 현행화 |
+| 민감정보 | 전체 ARN·Digest·Account ID·로컬 경로 원문 기록 없음 |
+
 ## 2026-07-22
 
 ### Decision 문서 기준 재정비
