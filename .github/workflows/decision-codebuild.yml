@@ -1,0 +1,76 @@
+name: Decision CodeBuild
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: Push the verified image to ECR
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  codebuild:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Start Decision CodeBuild
+        env:
+          PUSH_IMAGE: ${{ inputs.push_image }}
+        run: |
+          set -euo pipefail
+
+          SOURCE_SHA="${GITHUB_SHA}"
+          PUSH_VALUE="false"
+
+          if [[ "${PUSH_IMAGE}" == "true" ]]; then
+            PUSH_VALUE="true"
+          fi
+
+          BUILD_ID="$(
+            aws codebuild start-build \
+              --project-name portfolio-strategy-decision-build \
+              --source-version "${SOURCE_SHA}" \
+              --environment-variables-override \
+                name=PUSH_IMAGE,value="${PUSH_VALUE}",type=PLAINTEXT \
+              --query "build.id" \
+              --output text
+          )"
+
+          echo "BUILD_ID=${BUILD_ID}"
+          echo "SOURCE_SHA=${SOURCE_SHA}"
+          echo "PUSH_IMAGE=${PUSH_VALUE}"
+
+          while true; do
+            STATUS="$(
+              aws codebuild batch-get-builds \
+                --ids "${BUILD_ID}" \
+                --query "builds[0].buildStatus" \
+                --output text
+            )"
+
+            echo "BUILD_STATUS=${STATUS}"
+
+            case "${STATUS}" in
+              SUCCEEDED)
+                echo "DECISION_CODEBUILD_TRIGGER=SUCCESS"
+                break
+                ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT)
+                echo "DECISION_CODEBUILD_TRIGGER=FAILED"
+                exit 1
+                ;;
+            esac
+
+            sleep 15
+          done

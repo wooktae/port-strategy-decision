@@ -1,0 +1,198 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    AWS_DEFAULT_REGION: ap-northeast-2
+    IMAGE_REPO_NAME: portfolio-strategy-decision
+    PUSH_IMAGE: "false"
+    CODEARTIFACT_REGION: ap-northeast-1
+    CODEARTIFACT_DOMAIN: portfolio
+    CODEARTIFACT_REPOSITORY: portfolio-common
+    COMMON_PACKAGE_NAME: port-strategy-common
+    COMMON_PACKAGE_VERSION: 1.0.0
+
+phases:
+  install:
+    commands:
+      - set -euo pipefail
+      - python --version
+      - python -m pip install --upgrade pip
+      - python -m pip install -r requirements.txt
+      - python -m pip install pytest ruff
+
+  pre_build:
+    commands:
+      - set -euo pipefail
+      - |
+        SOURCE_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:-unknown}"
+
+        if [[ "${SOURCE_SHA}" == "unknown" ]]; then
+          echo "Missing CODEBUILD_RESOLVED_SOURCE_VERSION"
+          exit 1
+        fi
+
+        IMAGE_TAG="${SOURCE_SHA:0:12}"
+        AWS_ACCOUNT_ID="$(
+          aws sts get-caller-identity \
+            --query Account \
+            --output text
+        )"
+
+        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+        IMAGE_URI="${ECR_REGISTRY}/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+
+        export SOURCE_SHA
+        export IMAGE_TAG
+        export AWS_ACCOUNT_ID
+        export ECR_REGISTRY
+        export IMAGE_URI
+
+        mkdir -p evidence
+        mkdir -p .devops/packages
+        rm -f .devops/packages/*.whl
+
+        {
+          echo "SOURCE_SHA=${SOURCE_SHA}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
+          echo "IMAGE_URI=${IMAGE_URI}"
+          echo "COMMON_PACKAGE_NAME=${COMMON_PACKAGE_NAME}"
+          echo "COMMON_PACKAGE_VERSION=${COMMON_PACKAGE_VERSION}"
+        } > evidence/build.env
+
+        echo "SOURCE_SHA=${SOURCE_SHA}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+        echo "IMAGE_URI=${IMAGE_URI}"
+      - |
+        echo "=== DOWNLOAD COMMON WHEEL ==="
+
+        PYPI_ENDPOINT="$(
+          aws codeartifact get-repository-endpoint \
+            --region "${CODEARTIFACT_REGION}" \
+            --domain "${CODEARTIFACT_DOMAIN}" \
+            --domain-owner "${AWS_ACCOUNT_ID}" \
+            --repository "${CODEARTIFACT_REPOSITORY}" \
+            --format pypi \
+            --query repositoryEndpoint \
+            --output text
+        )"
+
+        CODEARTIFACT_AUTH_TOKEN="$(
+          aws codeartifact get-authorization-token \
+            --region "${CODEARTIFACT_REGION}" \
+            --domain "${CODEARTIFACT_DOMAIN}" \
+            --domain-owner "${AWS_ACCOUNT_ID}" \
+            --query authorizationToken \
+            --output text
+        )"
+
+        test -n "${PYPI_ENDPOINT}"
+        test -n "${CODEARTIFACT_AUTH_TOKEN}"
+
+        PYPI_SIMPLE_ENDPOINT="${PYPI_ENDPOINT%/}/simple/"
+
+        python -m pip download \
+          --no-deps \
+          --only-binary=:all: \
+          --dest .devops/packages \
+          --index-url "https://aws:${CODEARTIFACT_AUTH_TOKEN}@${PYPI_SIMPLE_ENDPOINT#https://}" \
+          "${COMMON_PACKAGE_NAME}==${COMMON_PACKAGE_VERSION}"
+
+        unset CODEARTIFACT_AUTH_TOKEN
+
+        COMMON_WHEEL="$(
+          find .devops/packages \
+            -maxdepth 1 \
+            -type f \
+            -name 'port_strategy_common-1.0.0-*.whl' |
+          head -n 1
+        )"
+
+        if [[ -z "${COMMON_WHEEL}" ]]; then
+          echo "Common Wheel download verification failed"
+          exit 1
+        fi
+
+        python -m pip install \
+          --no-deps \
+          --force-reinstall \
+          "${COMMON_WHEEL}"
+
+        python -c '
+        import importlib.metadata
+        version = importlib.metadata.version("port-strategy-common")
+        if version != "1.0.0":
+            raise SystemExit(f"Unexpected Common version: {version}")
+        print(f"COMMON_PACKAGE_VERSION={version}")
+        print("COMMON_WHEEL_INSTALL=SUCCESS")
+        '
+
+  build:
+    commands:
+      - set -euo pipefail
+      - echo "=== PYTHON COMPILE ==="
+      - python -m compileall -q .
+      - echo "PYTHON_COMPILE=SUCCESS"
+      - echo "=== UNIT AND CONTRACT TEST ==="
+      - python -m pytest
+      - echo "PYTEST=SUCCESS"
+      - echo "=== STATIC ANALYSIS ==="
+      - python -m ruff check . --select E9,F63,F7,F82 --exclude .git --exclude __pycache__
+      - echo "STATIC_ANALYSIS=SUCCESS"
+      - echo "=== HOST IMPORT SMOKE ==="
+      - python .devops/scripts/container-smoke.py
+      - echo "=== HOST ENTRYPOINT SMOKE ==="
+      - python .devops/scripts/entrypoint-smoke.py
+      - echo "=== DOCKER BUILD ==="
+      - docker build --tag "${IMAGE_URI}" .
+      - echo "DOCKER_BUILD=SUCCESS"
+      - echo "=== CONTAINER IMPORT SMOKE ==="
+      - docker run --rm --entrypoint python "${IMAGE_URI}" /app/port_strategy_decision/.devops/scripts/container-smoke.py
+      - echo "=== CONTAINER ENTRYPOINT SMOKE ==="
+      - docker run --rm --entrypoint python "${IMAGE_URI}" /app/port_strategy_decision/.devops/scripts/entrypoint-smoke.py
+      - |
+        if [[ "${PUSH_IMAGE}" == "true" ]]; then
+          aws ecr get-login-password \
+            --region "${AWS_DEFAULT_REGION}" |
+            docker login \
+              --username AWS \
+              --password-stdin "${ECR_REGISTRY}"
+
+          docker push "${IMAGE_URI}"
+
+          IMAGE_DIGEST="$(
+            aws ecr describe-images \
+              --region "${AWS_DEFAULT_REGION}" \
+              --repository-name "${IMAGE_REPO_NAME}" \
+              --image-ids imageTag="${IMAGE_TAG}" \
+              --query "imageDetails[0].imageDigest" \
+              --output text
+          )"
+
+          if [[ -z "${IMAGE_DIGEST}" || "${IMAGE_DIGEST}" == "None" ]]; then
+            echo "Image digest verification failed"
+            exit 1
+          fi
+
+          echo "IMAGE_DIGEST=${IMAGE_DIGEST}" |
+            tee evidence/image-digest.env
+
+          echo "ECR_PUSH=SUCCESS"
+        else
+          echo "ECR_PUSH=SKIPPED"
+        fi
+
+  post_build:
+    commands:
+      - |
+        if [[ "${CODEBUILD_BUILD_SUCCEEDING:-0}" == "1" ]]; then
+          echo "DECISION_CODEBUILD=SUCCESS"
+        else
+          echo "DECISION_CODEBUILD=FAILED"
+          exit 1
+        fi
+
+artifacts:
+  files:
+    - evidence/**/*
+  discard-paths: no

@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -20,5 +20,9 @@ venv/
 *.tmp
 
 # Local test / scratch files
-test*.py
+/test*.py
 debug_*.py
+/evidence/
+/.devops/packages/*.whl
+/.pytest_cache/
+/.ruff_cache/
