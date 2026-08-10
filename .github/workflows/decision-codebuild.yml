@@ -233,29 +233,41 @@ jobs:
 
           collect_task() {
             local TASK_ARN="$1"
+            local LOG_PREFIX="$2"
+            local CONTAINER_NAME="$3"
             local TASK_ID="${TASK_ARN##*/}"
+            local STREAM="${LOG_PREFIX}/${CONTAINER_NAME}/${TASK_ID}"
+            local RAW="/tmp/${TASK_ID}-events.json"
 
-            STREAM="$(
-              aws logs describe-log-streams \
+            echo "TASK_ID=${TASK_ID}"
+            echo "LOG_STREAM=${STREAM}"
+
+            FOUND="false"
+
+            for ATTEMPT in $(seq 1 12); do
+              echo "LOG_READ_ATTEMPT=${ATTEMPT}"
+
+              if aws logs get-log-events \
                 --log-group-name "${LOG_GROUP}" \
-                --order-by LastEventTime \
-                --descending \
-                --query "logStreams[?contains(logStreamName, '${TASK_ID}')].logStreamName | [0]" \
-                --output text
-            )"
+                --log-stream-name "${STREAM}" \
+                --start-from-head \
+                --query 'events[].message' \
+                --output json \
+                > "${RAW}" 2>/tmp/log-read-error.txt; then
+                FOUND="true"
+                break
+              fi
 
-            if [[ -z "${STREAM}" || "${STREAM}" == "None" ]]; then
-              echo "LOG_STREAM_NOT_FOUND task=${TASK_ID}"
+              cat /tmp/log-read-error.txt
+              sleep 5
+            done
+
+            if [[ "${FOUND}" != "true" ]]; then
+              echo "DECISION_SHADOW_LOG_STREAM_READ=FAILED stream=${STREAM}"
               exit 1
             fi
 
-            aws logs get-log-events \
-              --log-group-name "${LOG_GROUP}" \
-              --log-stream-name "${STREAM}" \
-              --start-from-head \
-              --query 'events[].message' \
-              --output json \
-            | jq -r '.[]' \
+            jq -r '.[]' "${RAW}" \
             | while IFS= read -r LINE; do
                 if echo "${LINE}" | jq -e \
                   'select(.event? | startswith("DECISION_SHADOW_"))' \
@@ -265,8 +277,15 @@ jobs:
               done
           }
 
-          collect_task "${BUY_TASK}"
-          collect_task "${POSITION_TASK}"
+          collect_task \
+            "${BUY_TASK}" \
+            "buy-signal-shadow" \
+            "strategy-decision-buy-signal-shadow"
+
+          collect_task \
+            "${POSITION_TASK}" \
+            "position-signal-shadow" \
+            "strategy-decision-position-signal-shadow"
 
           COUNT="$(wc -l < /tmp/shadow.jsonl | tr -d ' ')"
           echo "SHADOW_EVENT_COUNT=${COUNT}"
