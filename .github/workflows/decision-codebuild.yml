@@ -348,24 +348,47 @@ jobs:
             --cluster "${ECS_CLUSTER}" \
             --tasks "${TASK_ARN}"
 
-          TASK_ID="${TASK_ARN##*/}"
-
-          STREAM="$(
-            aws logs describe-log-streams \
-              --log-group-name "${LOG_GROUP}" \
-              --order-by LastEventTime \
-              --descending \
-              --query "logStreams[?contains(logStreamName, '${TASK_ID}')].logStreamName | [0]" \
+          EXIT_CODE="$(
+            aws ecs describe-tasks \
+              --cluster "${ECS_CLUSTER}" \
+              --tasks "${TASK_ARN}" \
+              --query 'tasks[0].containers[0].exitCode' \
               --output text
           )"
 
-          aws logs get-log-events \
-            --log-group-name "${LOG_GROUP}" \
-            --log-stream-name "${STREAM}" \
-            --start-from-head \
-            --query 'events[].message' \
-            --output text \
-            > /tmp/comparator.log
+          echo "COMPARATOR_TASK_ARN=${TASK_ARN}"
+          echo "COMPARATOR_EXIT_CODE=${EXIT_CODE}"
+
+          TASK_ID="${TASK_ARN##*/}"
+          STREAM="buy-signal-shadow/strategy-decision-buy-signal-shadow/${TASK_ID}"
+
+          echo "COMPARATOR_LOG_STREAM=${STREAM}"
+
+          FOUND="false"
+
+          for ATTEMPT in $(seq 1 12); do
+            echo "COMPARATOR_LOG_READ_ATTEMPT=${ATTEMPT}"
+
+            if aws logs get-log-events \
+              --log-group-name "${LOG_GROUP}" \
+              --log-stream-name "${STREAM}" \
+              --start-from-head \
+              --query 'events[].message' \
+              --output text \
+              > /tmp/comparator.log \
+              2>/tmp/comparator-log-error.txt; then
+              FOUND="true"
+              break
+            fi
+
+            cat /tmp/comparator-log-error.txt
+            sleep 5
+          done
+
+          if [[ "${FOUND}" != "true" ]]; then
+            echo "DECISION_COMPARATOR_LOG_READ=FAILED"
+            exit 1
+          fi
 
           REPORT_B64="$(
             grep '^DECISION_COMPARISON_REPORT_B64=' /tmp/comparator.log \
