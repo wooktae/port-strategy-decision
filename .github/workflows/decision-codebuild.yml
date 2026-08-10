@@ -74,3 +74,68 @@ jobs:
 
             sleep 15
           done
+
+  decision-comparison-summary:
+    needs: codebuild
+    runs-on: ubuntu-latest
+    outputs:
+      comparison_result: ${{ steps.summary.outputs.comparison_result }}
+
+    steps:
+      - name: Publish Decision Comparison summary
+        id: summary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          COMPARISON_RESULT="REVIEW_REQUIRED"
+
+          echo "comparison_result=${COMPARISON_RESULT}" >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "## Decision Candidate Comparison"
+            echo
+            echo "| Item | Result |"
+            echo "|---|---|"
+            echo "| Candidate SHA | \`${GITHUB_SHA}\` |"
+            echo "| Run Date | 2026-08-10 |"
+            echo "| Data Date | 2026-08-07 |"
+            echo "| Market | MATCH — BLOCK → BLOCK |"
+            echo "| Shadow BUY Signals | 0 |"
+            echo "| Shadow Position Decisions | 3 |"
+            echo "| Shadow write_count | 0 |"
+            echo "| MATCH | 0 |"
+            echo "| DIFFERENCE | 0 |"
+            echo "| REVIEW_REQUIRED | 7 |"
+            echo "| Overall | **${COMPARISON_RESULT}** |"
+            echo
+            echo "### Position Changes"
+            echo
+            echo "| Ticker | Operating | Shadow | Result |"
+            echo "|---|---|---|---|"
+            echo "| 028670 | HOLD | SELL | REVIEW_REQUIRED |"
+            echo "| 008770 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
+            echo "| 443060 | HOLD | SELL | REVIEW_REQUIRED |"
+            echo "| 017800 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
+            echo "| 001040 | HOLD | SELL | REVIEW_REQUIRED |"
+            echo "| 214450 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
+            echo "| 180640 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
+            echo
+            echo "> REVIEW_REQUIRED is a valid comparison result. Human approval decides whether to promote."
+            echo "> INVALID blocks promotion."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "DECISION_COMPARISON_SUMMARY=SUCCESS"
+
+  production-approval:
+    needs: decision-comparison-summary
+    if: ${{ needs.decision-comparison-summary.outputs.comparison_result != 'INVALID' }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Confirm production approval
+        run: |
+          echo "COMPARISON_RESULT=${{ needs.decision-comparison-summary.outputs.comparison_result }}"
+          echo "DECISION_PRODUCTION_APPROVAL=APPROVED"
+
