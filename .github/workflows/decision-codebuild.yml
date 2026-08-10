@@ -510,3 +510,223 @@ jobs:
         run: |
           echo "COMPARISON_RESULT=${{ needs.decision-comparison.outputs.comparison_result }}"
           echo "DECISION_PRODUCTION_APPROVAL=APPROVED"
+
+  production-promotion:
+    needs:
+      - codebuild
+      - decision-comparison
+      - production-approval
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Register Operating Task Definitions
+        id: operating
+        env:
+          IMAGE_URI: ${{ needs.codebuild.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+
+          register_operating() {
+            local BASE="$1"
+            local OUT_NAME="$2"
+            local EXPECTED_COMMAND="$3"
+
+            aws ecs describe-task-definition \
+              --task-definition "${BASE}" \
+              --query taskDefinition \
+              --output json \
+            > "/tmp/${OUT_NAME}-base.json"
+
+            ACTUAL_COMMAND="$(
+              jq -r '.containerDefinitions[0].command | join(" ")' \
+                "/tmp/${OUT_NAME}-base.json"
+            )"
+
+            echo "${OUT_NAME^^}_BASE_COMMAND=${ACTUAL_COMMAND}"
+
+            if [[ "${ACTUAL_COMMAND}" != "${EXPECTED_COMMAND}" ]]; then
+              echo "OPERATING_COMMAND_MISMATCH"
+              exit 1
+            fi
+
+            jq \
+              --arg IMAGE "${IMAGE_URI}" \
+              'del(
+                 .taskDefinitionArn,
+                 .revision,
+                 .status,
+                 .requiresAttributes,
+                 .compatibilities,
+                 .registeredAt,
+                 .registeredBy,
+                 .deregisteredAt
+               )
+               | .containerDefinitions[0].image = $IMAGE' \
+              "/tmp/${OUT_NAME}-base.json" \
+              > "/tmp/${OUT_NAME}-candidate.json"
+
+            ARN="$(
+              aws ecs register-task-definition \
+                --cli-input-json "file:///tmp/${OUT_NAME}-candidate.json" \
+                --query taskDefinition.taskDefinitionArn \
+                --output text
+            )"
+
+            echo "${OUT_NAME}_arn=${ARN}" >> "${GITHUB_OUTPUT}"
+            echo "${OUT_NAME^^}_ARN=${ARN}"
+          }
+
+          register_operating \
+            portfolio-paper-strategy-decision-buy-signal:3 \
+            buy_operating \
+            "python -m port_strategy_decision.daily_buy_signal_run"
+
+          register_operating \
+            portfolio-paper-strategy-decision-position-signal:3 \
+            position_operating \
+            "python -m port_strategy_decision.daily_position_signal_run"
+
+          echo "DECISION_OPERATING_TASK_DEFINITIONS_REGISTER=SUCCESS"
+
+      - name: Promote Operating State Machines
+        env:
+          BUY_TD: ${{ steps.operating.outputs.buy_operating_arn }}
+          POSITION_TD: ${{ steps.operating.outputs.position_operating_arn }}
+        run: |
+          set -euo pipefail
+
+          promote_state_machine() {
+            local ARN="$1"
+
+            NAME="$(
+              aws stepfunctions describe-state-machine \
+                --state-machine-arn "${ARN}" \
+                --query name \
+                --output text
+            )"
+
+            ROLE_ARN="$(
+              aws stepfunctions describe-state-machine \
+                --state-machine-arn "${ARN}" \
+                --query roleArn \
+                --output text
+            )"
+
+            aws stepfunctions describe-state-machine \
+              --state-machine-arn "${ARN}" \
+              --query definition \
+              --output text \
+              > "/tmp/${NAME}-definition.json"
+
+            jq \
+              --arg BUY "${BUY_TD}" \
+              --arg POSITION "${POSITION_TD}" \
+              '
+              walk(
+                if type == "object"
+                   and has("TaskDefinition")
+                   and (.TaskDefinition | type == "string")
+                then
+                  if (.TaskDefinition | contains("portfolio-paper-strategy-decision-buy-signal:"))
+                  then .TaskDefinition = $BUY
+                  elif (.TaskDefinition | contains("portfolio-paper-strategy-decision-position-signal:"))
+                  then .TaskDefinition = $POSITION
+                  else .
+                  end
+                else .
+                end
+              )
+              ' \
+              "/tmp/${NAME}-definition.json" \
+              > "/tmp/${NAME}-promoted.json"
+
+            aws stepfunctions update-state-machine \
+              --state-machine-arn "${ARN}" \
+              --definition "file:///tmp/${NAME}-promoted.json" \
+              --role-arn "${ROLE_ARN}" \
+              >/dev/null
+
+            echo "PROMOTED_STATE_MACHINE=${NAME}"
+          }
+
+          promote_state_machine \
+            arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-11-safe
+
+          promote_state_machine \
+            arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-17-approval
+
+          promote_state_machine \
+            arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step6-only
+
+          promote_state_machine \
+            arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step6-step7-step8-step9-step10-step11
+
+          promote_state_machine \
+            arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step7-only
+
+          echo "DECISION_OPERATING_STATE_MACHINE_PROMOTION=SUCCESS"
+
+      - name: Verify Operating Promotion
+        env:
+          BUY_TD: ${{ steps.operating.outputs.buy_operating_arn }}
+          POSITION_TD: ${{ steps.operating.outputs.position_operating_arn }}
+          IMAGE_URI: ${{ needs.codebuild.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+
+          echo "=== VERIFY OPERATING TASK DEFINITIONS ==="
+
+          for TD in "${BUY_TD}" "${POSITION_TD}"; do
+            IMAGE="$(
+              aws ecs describe-task-definition \
+                --task-definition "${TD}" \
+                --query 'taskDefinition.containerDefinitions[0].image' \
+                --output text
+            )"
+
+            echo "TASK_DEFINITION=${TD}"
+            echo "IMAGE=${IMAGE}"
+
+            if [[ "${IMAGE}" != "${IMAGE_URI}" ]]; then
+              echo "OPERATING_IMAGE_VERIFY=FAILED"
+              exit 1
+            fi
+          done
+
+          verify_sm() {
+            local ARN="$1"
+
+            DEF="$(
+              aws stepfunctions describe-state-machine \
+                --state-machine-arn "${ARN}" \
+                --query definition \
+                --output text
+            )"
+
+            if echo "${DEF}" \
+              | grep -q 'portfolio-paper-strategy-decision-buy-signal:3'; then
+              echo "OLD_BUY_REVISION_REMAINS=${ARN}"
+              exit 1
+            fi
+
+            if echo "${DEF}" \
+              | grep -q 'portfolio-paper-strategy-decision-position-signal:3'; then
+              echo "OLD_POSITION_REVISION_REMAINS=${ARN}"
+              exit 1
+            fi
+          }
+
+          verify_sm arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-11-safe
+          verify_sm arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step1-17-approval
+          verify_sm arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step6-only
+          verify_sm arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step6-step7-step8-step9-step10-step11
+          verify_sm arn:aws:states:ap-northeast-2:309011444323:stateMachine:portfolio-paper-daily-step7-only
+
+          echo "DECISION_OPERATING_PROMOTION_VERIFY=SUCCESS"
+
