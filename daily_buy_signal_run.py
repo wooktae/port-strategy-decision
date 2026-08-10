@@ -389,6 +389,7 @@ def run_daily_signal_shadow(run_date=None, data_date=None):
                     "final_score": signal.get("final_score"),
                     "flow_score": signal.get("flow_score"),
                     "position_size": signal.get("position_size"),
+                    "target_qty": signal.get("target_qty"),
                     "entry_reason": signal.get("entry_reason"),
                     "processor_version": signal.get("processor_version"),
                     "write_count": 0,
