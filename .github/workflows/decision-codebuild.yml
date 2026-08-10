@@ -390,17 +390,21 @@ jobs:
             exit 1
           fi
 
-          REPORT_B64="$(
-            grep '^DECISION_COMPARISON_REPORT_B64=' /tmp/comparator.log \
-              | tail -1 \
-              | cut -d= -f2-
+          REPORT_LINE="$(
+            tr '\t' '\n' < /tmp/comparator.log \
+              | grep 'DECISION_COMPARISON_REPORT_B64=' \
+              | tail -1 || true
           )"
 
-          if [[ -z "${REPORT_B64}" ]]; then
+          REPORT_B64="${REPORT_LINE#*DECISION_COMPARISON_REPORT_B64=}"
+
+          if [[ -z "${REPORT_LINE}" || -z "${REPORT_B64}" ]]; then
             cat /tmp/comparator.log
             echo "DECISION_COMPARISON_REPORT=MISSING"
             exit 1
           fi
+
+          echo "DECISION_COMPARISON_REPORT_MARKER=FOUND"
 
           echo "${REPORT_B64}" \
             | base64 -d \
