@@ -6,16 +6,28 @@ on:
       push_image:
         description: Push the verified image to ECR
         required: true
-        default: false
+        default: true
         type: boolean
 
 permissions:
   id-token: write
   contents: read
 
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ACCOUNT_ID: "309011444323"
+  ECR_REPOSITORY: portfolio-strategy-decision
+  ECS_CLUSTER: portfolio-paper-cluster
+  LOG_GROUP: /portfolio/paper/strategy-decision
+  SUBNETS: subnet-0b4ab98b1f0ee2d9c,subnet-0cf35c54a9933a25d
+  SECURITY_GROUP: sg-0a05b70f33b6a88be
+
 jobs:
   codebuild:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
+      image_uri: ${{ steps.build.outputs.image_uri }}
 
     steps:
       - name: Configure AWS credentials
@@ -25,14 +37,17 @@ jobs:
           aws-region: ap-northeast-2
 
       - name: Start Decision CodeBuild
+        id: build
         env:
           PUSH_IMAGE: ${{ inputs.push_image }}
         run: |
           set -euo pipefail
 
           SOURCE_SHA="${GITHUB_SHA}"
-          PUSH_VALUE="false"
+          IMAGE_TAG="${SOURCE_SHA:0:12}"
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
 
+          PUSH_VALUE="false"
           if [[ "${PUSH_IMAGE}" == "true" ]]; then
             PUSH_VALUE="true"
           fi
@@ -49,7 +64,7 @@ jobs:
 
           echo "BUILD_ID=${BUILD_ID}"
           echo "SOURCE_SHA=${SOURCE_SHA}"
-          echo "PUSH_IMAGE=${PUSH_VALUE}"
+          echo "IMAGE_TAG=${IMAGE_TAG}"
 
           while true; do
             STATUS="$(
@@ -63,11 +78,9 @@ jobs:
 
             case "${STATUS}" in
               SUCCEEDED)
-                echo "DECISION_CODEBUILD_TRIGGER=SUCCESS"
                 break
                 ;;
               FAILED|FAULT|STOPPED|TIMED_OUT)
-                echo "DECISION_CODEBUILD_TRIGGER=FAILED"
                 exit 1
                 ;;
             esac
@@ -75,22 +88,319 @@ jobs:
             sleep 15
           done
 
-  decision-comparison-summary:
+          if [[ "${PUSH_VALUE}" != "true" ]]; then
+            echo "Decision release comparison requires push_image=true."
+            exit 1
+          fi
+
+          aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids "imageTag=${IMAGE_TAG}" \
+            >/dev/null
+
+          echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "DECISION_CODEBUILD_TRIGGER=SUCCESS"
+
+  decision-comparison:
     needs: codebuild
     runs-on: ubuntu-latest
     outputs:
-      comparison_result: ${{ steps.summary.outputs.comparison_result }}
+      comparison_result: ${{ steps.compare.outputs.comparison_result }}
 
     steps:
-      - name: Publish Decision Comparison summary
-        id: summary
-        shell: bash
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_CODEBUILD_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Register Candidate Shadow Task Definitions
+        id: candidate
+        env:
+          IMAGE_URI: ${{ needs.codebuild.outputs.image_uri }}
         run: |
           set -euo pipefail
 
-          COMPARISON_RESULT="REVIEW_REQUIRED"
+          register_candidate() {
+            local BASE="$1"
+            local OUT_NAME="$2"
 
-          echo "comparison_result=${COMPARISON_RESULT}" >> "${GITHUB_OUTPUT}"
+            aws ecs describe-task-definition \
+              --task-definition "${BASE}" \
+              --query taskDefinition \
+              --output json \
+            | jq \
+                --arg IMAGE "${IMAGE_URI}" \
+                'del(
+                   .taskDefinitionArn,
+                   .revision,
+                   .status,
+                   .requiresAttributes,
+                   .compatibilities,
+                   .registeredAt,
+                   .registeredBy,
+                   .deregisteredAt
+                 )
+                 | .containerDefinitions[0].image = $IMAGE' \
+            > "/tmp/${OUT_NAME}.json"
+
+            ARN="$(
+              aws ecs register-task-definition \
+                --cli-input-json "file:///tmp/${OUT_NAME}.json" \
+                --query taskDefinition.taskDefinitionArn \
+                --output text
+            )"
+
+            echo "${OUT_NAME}_arn=${ARN}" >> "${GITHUB_OUTPUT}"
+            echo "${OUT_NAME^^}_ARN=${ARN}"
+          }
+
+          register_candidate \
+            portfolio-paper-strategy-decision-buy-signal-shadow:1 \
+            buy_shadow
+
+          register_candidate \
+            portfolio-paper-strategy-decision-position-signal-shadow:1 \
+            position_shadow
+
+          echo "DECISION_CANDIDATE_SHADOW_REGISTER=SUCCESS"
+
+      - name: Run Candidate Shadow
+        id: shadow
+        env:
+          BUY_TD: ${{ steps.candidate.outputs.buy_shadow_arn }}
+          POSITION_TD: ${{ steps.candidate.outputs.position_shadow_arn }}
+        run: |
+          set -euo pipefail
+
+          run_task() {
+            local TD="$1"
+
+            aws ecs run-task \
+              --cluster "${ECS_CLUSTER}" \
+              --launch-type FARGATE \
+              --task-definition "${TD}" \
+              --network-configuration \
+                "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SECURITY_GROUP}],assignPublicIp=ENABLED}" \
+              --query 'tasks[0].taskArn' \
+              --output text
+          }
+
+          wait_task() {
+            local ARN="$1"
+
+            aws ecs wait tasks-stopped \
+              --cluster "${ECS_CLUSTER}" \
+              --tasks "${ARN}"
+
+            EXIT_CODE="$(
+              aws ecs describe-tasks \
+                --cluster "${ECS_CLUSTER}" \
+                --tasks "${ARN}" \
+                --query 'tasks[0].containers[0].exitCode' \
+                --output text
+            )"
+
+            echo "TASK_ARN=${ARN}"
+            echo "EXIT_CODE=${EXIT_CODE}"
+
+            if [[ "${EXIT_CODE}" != "0" ]]; then
+              exit 1
+            fi
+          }
+
+          BUY_TASK="$(run_task "${BUY_TD}")"
+          wait_task "${BUY_TASK}"
+
+          POSITION_TASK="$(run_task "${POSITION_TD}")"
+          wait_task "${POSITION_TASK}"
+
+          echo "buy_task=${BUY_TASK}" >> "${GITHUB_OUTPUT}"
+          echo "position_task=${POSITION_TASK}" >> "${GITHUB_OUTPUT}"
+
+          echo "DECISION_CANDIDATE_SHADOW_EXECUTION=SUCCESS"
+
+      - name: Collect Shadow Logs
+        id: logs
+        env:
+          BUY_TASK: ${{ steps.shadow.outputs.buy_task }}
+          POSITION_TASK: ${{ steps.shadow.outputs.position_task }}
+        run: |
+          set -euo pipefail
+
+          : > /tmp/shadow.jsonl
+
+          collect_task() {
+            local TASK_ARN="$1"
+            local TASK_ID="${TASK_ARN##*/}"
+
+            STREAM="$(
+              aws logs describe-log-streams \
+                --log-group-name "${LOG_GROUP}" \
+                --order-by LastEventTime \
+                --descending \
+                --query "logStreams[?contains(logStreamName, '${TASK_ID}')].logStreamName | [0]" \
+                --output text
+            )"
+
+            if [[ -z "${STREAM}" || "${STREAM}" == "None" ]]; then
+              echo "LOG_STREAM_NOT_FOUND task=${TASK_ID}"
+              exit 1
+            fi
+
+            aws logs get-log-events \
+              --log-group-name "${LOG_GROUP}" \
+              --log-stream-name "${STREAM}" \
+              --start-from-head \
+              --query 'events[].message' \
+              --output json \
+            | jq -r '.[]' \
+            | while IFS= read -r LINE; do
+                if echo "${LINE}" | jq -e \
+                  'select(.event? | startswith("DECISION_SHADOW_"))' \
+                  >/dev/null 2>&1; then
+                  echo "${LINE}" >> /tmp/shadow.jsonl
+                fi
+              done
+          }
+
+          collect_task "${BUY_TASK}"
+          collect_task "${POSITION_TASK}"
+
+          COUNT="$(wc -l < /tmp/shadow.jsonl | tr -d ' ')"
+          echo "SHADOW_EVENT_COUNT=${COUNT}"
+
+          if [[ "${COUNT}" == "0" ]]; then
+            exit 1
+          fi
+
+          gzip -c /tmp/shadow.jsonl \
+            | base64 -w 0 \
+            > /tmp/shadow.jsonl.gz.b64
+
+          echo "DECISION_CANDIDATE_SHADOW_LOG_EXTRACT=SUCCESS"
+
+      - name: Run ECS Comparator
+        id: compare
+        env:
+          COMPARATOR_TD: ${{ steps.candidate.outputs.buy_shadow_arn }}
+        run: |
+          set -euo pipefail
+
+          INPUT_B64="$(cat /tmp/shadow.jsonl.gz.b64)"
+
+          OVERRIDES="$(
+            jq -n \
+              --arg INPUT "${INPUT_B64}" \
+              '{
+                 containerOverrides: [
+                   {
+                     name: "strategy-decision-buy-signal-shadow",
+                     command: [
+                       "python",
+                       "-m",
+                       "port_strategy_decision.decision_comparison_ecs_run"
+                     ],
+                     environment: [
+                       {
+                         name: "DECISION_SHADOW_JSONL_GZIP_B64",
+                         value: $INPUT
+                       }
+                     ]
+                   }
+                 ]
+               }'
+          )"
+
+          TASK_ARN="$(
+            aws ecs run-task \
+              --cluster "${ECS_CLUSTER}" \
+              --launch-type FARGATE \
+              --task-definition "${COMPARATOR_TD}" \
+              --network-configuration \
+                "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SECURITY_GROUP}],assignPublicIp=ENABLED}" \
+              --overrides "${OVERRIDES}" \
+              --query 'tasks[0].taskArn' \
+              --output text
+          )"
+
+          aws ecs wait tasks-stopped \
+            --cluster "${ECS_CLUSTER}" \
+            --tasks "${TASK_ARN}"
+
+          TASK_ID="${TASK_ARN##*/}"
+
+          STREAM="$(
+            aws logs describe-log-streams \
+              --log-group-name "${LOG_GROUP}" \
+              --order-by LastEventTime \
+              --descending \
+              --query "logStreams[?contains(logStreamName, '${TASK_ID}')].logStreamName | [0]" \
+              --output text
+          )"
+
+          aws logs get-log-events \
+            --log-group-name "${LOG_GROUP}" \
+            --log-stream-name "${STREAM}" \
+            --start-from-head \
+            --query 'events[].message' \
+            --output text \
+            > /tmp/comparator.log
+
+          REPORT_B64="$(
+            grep '^DECISION_COMPARISON_REPORT_B64=' /tmp/comparator.log \
+              | tail -1 \
+              | cut -d= -f2-
+          )"
+
+          if [[ -z "${REPORT_B64}" ]]; then
+            cat /tmp/comparator.log
+            echo "DECISION_COMPARISON_REPORT=MISSING"
+            exit 1
+          fi
+
+          echo "${REPORT_B64}" \
+            | base64 -d \
+            > /tmp/comparison-report.json
+
+          RESULT="$(jq -r '.result // "INVALID"' /tmp/comparison-report.json)"
+
+          echo "comparison_result=${RESULT}" >> "${GITHUB_OUTPUT}"
+          echo "DECISION_COMPARISON_RESULT=${RESULT}"
+
+          if [[ "${RESULT}" == "INVALID" ]]; then
+            exit 2
+          fi
+
+      - name: Publish Decision Comparison Summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f /tmp/comparison-report.json ]]; then
+            {
+              echo "## Decision Candidate Comparison"
+              echo
+              echo "**Result: INVALID**"
+              echo
+              echo "Comparison report was not generated."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          RESULT="$(jq -r '.result' /tmp/comparison-report.json)"
+          RUN_DATE="$(jq -r '.run_date' /tmp/comparison-report.json)"
+          DATA_DATE="$(jq -r '.data_date' /tmp/comparison-report.json)"
+          MARKET_OPERATING="$(jq -r '.market.operating' /tmp/comparison-report.json)"
+          MARKET_SHADOW="$(jq -r '.market.shadow' /tmp/comparison-report.json)"
+          MARKET_RESULT="$(jq -r '.market.result' /tmp/comparison-report.json)"
+          BUY_COUNT="$(jq -r '.shadow.buy_signal_count' /tmp/comparison-report.json)"
+          POSITION_COUNT="$(jq -r '.shadow.position_decision_count' /tmp/comparison-report.json)"
+          WRITE_COUNT="$(jq -r '.shadow.write_count' /tmp/comparison-report.json)"
+          MATCH_COUNT="$(jq -r '.summary.match' /tmp/comparison-report.json)"
+          DIFFERENCE_COUNT="$(jq -r '.summary.difference' /tmp/comparison-report.json)"
+          REVIEW_COUNT="$(jq -r '.summary.review_required' /tmp/comparison-report.json)"
 
           {
             echo "## Decision Candidate Comparison"
@@ -98,44 +408,59 @@ jobs:
             echo "| Item | Result |"
             echo "|---|---|"
             echo "| Candidate SHA | \`${GITHUB_SHA}\` |"
-            echo "| Run Date | 2026-08-10 |"
-            echo "| Data Date | 2026-08-07 |"
-            echo "| Market | MATCH — BLOCK → BLOCK |"
-            echo "| Shadow BUY Signals | 0 |"
-            echo "| Shadow Position Decisions | 3 |"
-            echo "| Shadow write_count | 0 |"
-            echo "| MATCH | 0 |"
-            echo "| DIFFERENCE | 0 |"
-            echo "| REVIEW_REQUIRED | 7 |"
-            echo "| Overall | **${COMPARISON_RESULT}** |"
+            echo "| Run Date | ${RUN_DATE} |"
+            echo "| Data Date | ${DATA_DATE} |"
+            echo "| Market | ${MARKET_RESULT} — ${MARKET_OPERATING} → ${MARKET_SHADOW} |"
+            echo "| Shadow BUY Signals | ${BUY_COUNT} |"
+            echo "| Shadow Position Decisions | ${POSITION_COUNT} |"
+            echo "| Shadow write_count | ${WRITE_COUNT} |"
+            echo "| MATCH | ${MATCH_COUNT} |"
+            echo "| DIFFERENCE | ${DIFFERENCE_COUNT} |"
+            echo "| REVIEW_REQUIRED | ${REVIEW_COUNT} |"
+            echo "| Overall | **${RESULT}** |"
             echo
-            echo "### Position Changes"
+            echo "### Changes"
             echo
-            echo "| Ticker | Operating | Shadow | Result |"
-            echo "|---|---|---|---|"
-            echo "| 028670 | HOLD | SELL | REVIEW_REQUIRED |"
-            echo "| 008770 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
-            echo "| 443060 | HOLD | SELL | REVIEW_REQUIRED |"
-            echo "| 017800 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
-            echo "| 001040 | HOLD | SELL | REVIEW_REQUIRED |"
-            echo "| 214450 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
-            echo "| 180640 | SELL | POSITION_REMOVED | REVIEW_REQUIRED |"
+            echo "| Area | Ticker | Operating | Shadow | Result |"
+            echo "|---|---|---|---|---|"
+
+            jq -r '
+              .comparisons[] |
+              [
+                .area,
+                (.ticker_code // "-"),
+                (
+                  if .operating == null then "-"
+                  elif .operating.decision_type then .operating.decision_type
+                  else "PRESENT"
+                  end
+                ),
+                (
+                  if .shadow == null then "REMOVED"
+                  elif .shadow.decision_type then .shadow.decision_type
+                  else "PRESENT"
+                  end
+                ),
+                .result
+              ] |
+              "| " + join(" | ") + " |"
+            ' /tmp/comparison-report.json
+
             echo
-            echo "> REVIEW_REQUIRED is a valid comparison result. Human approval decides whether to promote."
-            echo "> INVALID blocks promotion."
+            echo "> MATCH / DIFFERENCE / REVIEW_REQUIRED are valid comparison results."
+            echo "> INVALID blocks production approval."
           } >> "${GITHUB_STEP_SUMMARY}"
 
           echo "DECISION_COMPARISON_SUMMARY=SUCCESS"
 
   production-approval:
-    needs: decision-comparison-summary
-    if: ${{ needs.decision-comparison-summary.outputs.comparison_result != 'INVALID' }}
+    needs: decision-comparison
+    if: ${{ needs.decision-comparison.outputs.comparison_result != 'INVALID' }}
     runs-on: ubuntu-latest
     environment: production
 
     steps:
       - name: Confirm production approval
         run: |
-          echo "COMPARISON_RESULT=${{ needs.decision-comparison-summary.outputs.comparison_result }}"
+          echo "COMPARISON_RESULT=${{ needs.decision-comparison.outputs.comparison_result }}"
           echo "DECISION_PRODUCTION_APPROVAL=APPROVED"
-
