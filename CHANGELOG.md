@@ -7,6 +7,78 @@
 - 민감정보와 일회성 운영값은 기록하지 않는다.
 - 날짜별 worklog는 새로 만들지 않고 주요 변경은 이 문서에 남긴다.
 
+## 2026-08-10
+
+### Repository·Branch
+
+| 항목 | 값 |
+|---|---|
+| 기본 브랜치 | `master` → `main` 전환 |
+| OIDC Trust | main branch 기준 정리 |
+| 최종 작업 단축 SHA | `a01d90592a7c` |
+
+### Decision Comparison 자동화
+
+| 항목 | 값 |
+|---|---|
+| 추가 파일 | `decision_comparator.py` |
+| 책임 | 운영 DB 결과와 Shadow CloudWatch JSON 비교, report JSON 생성 |
+| 비교 대상 | BUY와 Position |
+| DB 영향 | 운영 DB read-only 조회, Decision 결과 신규 저장 없음 |
+| 결과 4종 | MATCH, DIFFERENCE, REVIEW_REQUIRED, INVALID |
+| INVALID 처리 | 실패 경로, Promotion 차단 |
+
+### Candidate Shadow와 Comparator Runner
+
+| 항목 | 값 |
+|---|---|
+| 추가 파일 | `decision_comparison_ecs_run.py` |
+| 책임 | gzip+base64 Shadow JSONL 복원 후 comparator 실행, base64 report marker 출력 |
+| Candidate 실행 | 운영과 분리된 Shadow Family에 Candidate Image Revision 등록 |
+| 실행 방식 | GitHub Workflow ECS RunTask로 BUY Shadow → Position Shadow 직접 실행 |
+| Shadow 계약 | read-only, write_count=0, 주문 경로 미연계 |
+| BUY Shadow 보강 | Shadow BUY JSON에 비교용 `target_qty` 포함 |
+
+### GitHub Approval과 Production Promotion
+
+| 항목 | 값 |
+|---|---|
+| Workflow | Candidate Shadow → Comparison → Job Summary → production 승인 → Promotion 연결 |
+| 승인 gate | GitHub `production` Environment manual approval |
+| Reject | Promotion 미실행 확인 |
+| Approve | Production Promotion 실행 확인 |
+| Promotion Image | 승인된 동일 Candidate Image 재빌드 없이 사용 |
+| BUY 운영 Command | `daily_buy_signal_run` 유지 |
+| Position 운영 Command | 기본 v1 `daily_position_signal_run` 유지 |
+| Revision 전환 | 기존 운영 `:3` 기준 신규 Revision 등록·전환 |
+| 대상 State Machine | 관련 5개 운영 State Machine 참조 갱신·검증 |
+
+### Validation
+
+| 항목 | 값 |
+|---|---|
+| 실데이터 Comparison | 2026-08-10 실데이터로 성공 |
+| Market | 운영·Shadow 모두 BLOCK, MATCH |
+| BUY Shadow Signal | 0건 |
+| Shadow Position Decision | 3건, write_count=0 |
+| 최종 결과 | `REVIEW_REQUIRED` |
+| Review 분류 | 7건 Position 비교가 사람 확인 필요로 분류 |
+| 차이 예시 | 운영 HOLD → Shadow SELL, Shadow 평가 대상에서 제거된 Position |
+| 해석 | 운영 v1 vs Shadow v2와 active position population 차이 탐지, 판단 오류 아님 |
+| 전체 Workflow | Comparison → 승인 → Production Promotion까지 성공 |
+
+### 작업 범위
+
+| 항목 | 값 |
+|---|---|
+| 전략 판단 로직 변경 | 없음, 운영 Position 기본 v1 유지 |
+| 신규 기능 | Comparison 자동화와 Comparator ECS Runner |
+| Shadow 보강 | BUY Shadow JSON `target_qty` 추가 |
+| 운영 DB 영향 | 없음, Comparison은 read-only |
+| 주문 실행 | 없음 |
+| 이번 문서 작업 | `AGENTS.md`, `README.md`, `CHANGELOG.md`, `docs/source-file-catalog.md` 현행화 |
+| 민감정보 | 전체 ARN·Digest·Account ID·subnet·security group·로컬 경로 원문 기록 없음 |
+
 ## 2026-07-31
 
 ### Decision DevOps 기준선

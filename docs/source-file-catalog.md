@@ -34,6 +34,8 @@
 |---|---|
 | `__init__.py` | `port_strategy_decision` 패키지 import 기준점 |
 | `db_config.py` | `INTEREST_DB_*` 환경변수와 Decision DB 연결 설정 관리 |
+| `decision_comparator.py` | 운영 Decision 결과와 Shadow JSON 비교 및 report 생성 |
+| `decision_comparison_ecs_run.py` | ECS에서 Comparison을 실행하는 wrapper |
 | `requirements.txt` | 컨테이너에서 설치할 Python dependency 목록 |
 | `Dockerfile` | Daily Decision 컨테이너 이미지와 기본 CMD 정의 |
 | `.dockerignore` | 이미지 build 컨텍스트 제외 규칙 |
@@ -89,7 +91,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `.github/workflows/decision-codebuild.yml` | `workflow_dispatch`로 CodeBuild 시작·상태 대기 |
+| `.github/workflows/decision-codebuild.yml` | CodeBuild, Candidate Shadow, CloudWatch 수집, Comparator, GitHub Summary, `production` 승인과 Production Promotion 담당 |
 | `.devops/codebuild/buildspec.yml` | 품질 게이트, Common Wheel download, Docker build, 선택적 ECR push |
 | `.devops/scripts/container-smoke.py` | import-only smoke, DB 연결·run 함수 미호출 |
 | `.devops/scripts/entrypoint-smoke.py` | argparse `--help` 경로만 실행하는 entrypoint smoke |
@@ -147,6 +149,7 @@ Daily Buy 흐름은 feature를 읽고 market, filter와 sizing을 수행한 뒤 
 | DB 영향 | 조회와 쓰기 |
 | 후속 영향 | StrategyExecution이 소비할 signal 생성 가능 |
 | 실행 모드 | 운영 모드와 read-only `--shadow` 모드 (write_count=0, JSON) |
+| Shadow 출력 | Shadow BUY JSON에 Comparison용 `target_qty` 포함 |
 | 실행 위험 | 운영 모드는 실제 운영 데이터 변경 |
 | 주의 | 문서화·정적 분석 중 실행하지 않음 |
 
@@ -361,6 +364,30 @@ Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과
 | 실행 조건 | 출력 필드와 대상 환경을 먼저 확인 |
 | 주의 | 안전한 정적 분석 도구로 간주하지 않음 |
 
+### 9.2 `decision_comparator.py`
+
+| 항목 | 값 |
+|---|---|
+| 책임 | 운영 Decision 결과와 Shadow JSON 비교 및 report 생성 |
+| 입력 | Shadow JSONL과 운영 DB 조회 결과 |
+| 출력 | Comparison JSON report |
+| 결과 | MATCH / DIFFERENCE / REVIEW_REQUIRED / INVALID |
+| DB 영향 | 운영 DB read-only 조회 |
+| 변경 위험 | Promotion review 의미, BUY·Position identity와 comparison classification |
+| 주의 | 비교 결과를 Decision 자체 판단 결과로 저장하지 않음 |
+
+### 9.3 `decision_comparison_ecs_run.py`
+
+| 항목 | 값 |
+|---|---|
+| 책임 | ECS에서 Comparison을 실행하기 위한 wrapper |
+| 입력 | gzip+base64 Shadow JSONL 환경변수 |
+| 처리 | payload 복원 → comparator subprocess 실행 |
+| 출력 | base64 report marker와 Comparison result marker |
+| DB 영향 | Comparator를 통한 read-only 조회 |
+| 변경 위험 | GitHub Workflow report parsing과 Approval 연결 |
+| 주의 | 운영 BUY·Position entrypoint가 아님 |
+
 ## 10. 데이터 계약
 
 ### 10.1 주요 입력
@@ -418,6 +445,8 @@ Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과
 | `daily_position_repository.py` | Position decision 쓰기와 state 갱신 |
 | `backtest_decision_run.py` | DB 조회와 snapshot 출력 |
 | `daily_validator.py` | DB 조회와 운영 데이터 출력 |
+| `decision_comparator.py` | 운영 DB read-only 조회와 Comparison report 생성 |
+| `decision_comparison_ecs_run.py` | Comparator wrapper, read-only 조회 |
 | `daily_feature_loader.py` | DB feature 조회 |
 | Builder·Evaluator·Adapter | 직접 DB 쓰기는 없지만 저장 계약에 영향 |
 

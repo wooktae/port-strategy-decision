@@ -94,6 +94,8 @@ Decision이 직접 담당하지 않는 범위는 아래와 같다.
 |---|---|
 | `backtest_decision_run.py` | 단일 일자 decision snapshot 후보이며 DB 조회가 있으므로 문서 작업 중 실행하지 않는다. |
 | `daily_validator.py` | DB 조회와 출력이 포함될 수 있으므로 구조 확인 후에만 실행 여부를 판단한다. |
+| `decision_comparator.py` | 운영 DB read-only 조회와 Shadow JSON 비교 도구이므로 운영 중요 파일로 취급하고 문서 작업 중 실행하지 않는다. |
+| `decision_comparison_ecs_run.py` | ECS Comparator wrapper이며 운영 BUY·Position entrypoint가 아니다. |
 | test/debug/output 파일 | 운영 소스로 단정하지 않고 증거 확인 전에는 후보 또는 로컬 산출물로 표현한다. |
 
 ## 4. 입력 데이터 계약
@@ -303,6 +305,20 @@ Decision은 원천 데이터를 직접 만들지 않는다. 아래 입력을 읽
 | 범위 확인 | 운영 E2E에서 Step 8 이후와 주문 경로 미호출 확인 |
 | 결과 구분 | 결과 0건과 검증 실패를 구분 |
 | 실데이터 한계 | 실데이터 미발생 시 로직 동일성 검증 완료로 기록하지 않음 |
+
+### 13.2 Decision Comparison 규칙
+
+| 항목 | 기준 |
+|---|---|
+| Comparator 결과 | `MATCH`, `DIFFERENCE`, `REVIEW_REQUIRED`, `INVALID` 의미를 임의로 변경하지 않음 |
+| 결과 혼동 금지 | `INVALID`와 `REVIEW_REQUIRED`를 같은 의미로 다루지 않음 |
+| INVALID | 정상 Comparison으로 취급하지 않고 Promotion 대상에서 제외 |
+| Evaluator 경계 | 운영 v1과 Shadow v2 구분을 유지 |
+| Candidate Shadow | read-only, write_count=0 계약 유지 |
+| Promotion Command | 운영 Command에 `--shadow`나 Shadow v2를 혼입하지 않음 |
+| DB 영향 | Comparator 수정 시 운영 DB write를 추가하지 않음, 비교 결과를 Decision 판단 결과로 저장하지 않음 |
+| Workflow 변경 | Comparison·Approval·Promotion 변경 시 Candidate Artifact identity와 운영 5개 State Machine 영향을 확인 |
+| 문서 연동 | Comparison 파일 추가·책임 변경 시 `docs/source-file-catalog.md`를 함께 갱신 |
 
 ## 14. 보안과 민감정보
 

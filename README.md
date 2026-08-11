@@ -4,7 +4,7 @@
 
 시장 상태와 매수 가능 범위를 판단하고, 종목 후보를 필터링해 수량을 계산한다. 또한 활성 포지션을 평가해 HOLD, SELL, SKIP 판단을 생성한다.
 
-이 문서는 현재 저장소 파일 구조와 검증된 운영 AS-IS를 설명한다. 2026-07-31에는 승인된 DevOps 범위에서 AWS Shadow Canary와 운영 Step 6·7 E2E를 실행했다. Step 8 이후, StrategyExecution과 주문은 실행하지 않았다. 이번 문서 현행화 작업 자체에서는 추가 AWS·DB·주문 실행을 수행하지 않는다.
+이 문서는 현재 저장소 파일 구조와 검증된 운영 AS-IS를 설명한다. 2026-07-31에는 승인된 DevOps 범위에서 AWS Shadow Canary와 운영 Step 6·7 E2E를 실행했고, 2026-08-10에는 운영 DB 결과와 Shadow JSON을 자동 비교하는 Decision Comparison과 GitHub `production` 승인 기반 Production Promotion까지 검증했다. Step 8 이후, StrategyExecution과 주문은 실행하지 않았다. 이번 문서 현행화 작업 자체에서는 추가 AWS·DB·주문 실행을 수행하지 않는다.
 
 ## 1. 서비스 요약
 
@@ -18,7 +18,8 @@
 | 공통 로직 | `port_strategy_common` 1.0.0 Wheel |
 | 운영 진입점 | `daily_buy_signal_run.py`, `daily_position_signal_run.py` |
 | 실행 모드 | 운영 모드와 read-only `--shadow` Shadow Canary 모드 |
-| CI·배포 | GitHub Actions → CodeBuild, ECR Image, ECS Task Definition Revision |
+| Repository | `wooktae/port-strategy-decision`, 기본 브랜치 `main` |
+| CI·배포 | GitHub Actions → CodeBuild → Candidate Shadow → Comparison → `production` 승인 → Production Promotion |
 | 상세 파일 문서 | `docs/source-file-catalog.md` |
 
 ## 2. 책임 경계
@@ -243,36 +244,35 @@ Decision은 AWS Paper Daily에서 판단 단계로 사용된다. Scheduler, Step
 
 ### 8.3 Shadow Canary
 
-Shadow Canary는 2026-07-31 구성·검증이 완료된 read-only 검증 경로다.
+Shadow Canary는 운영과 분리된 read-only 검증 경로다. 운영 BUY·Position Family와 별도의 Shadow Family를 사용한다.
 
 | 항목 | 값 |
 |---|---|
 | BUY Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
 | Position Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
-| Shadow Revision | 각각 `:1` |
 | BUY Shadow Command | 운영 진입점에 `--shadow` 추가 |
 | Position Shadow Command | `--shadow --evaluator-version v2` |
-| 실행 순서 | 전용 State Machine에서 BUY Shadow → Position Shadow 순차 |
+| 실행 순서 | BUY Shadow → Position Shadow 순차 |
 | 저장 계약 | read-only, write_count=0 |
 | 결과 | CloudWatch 구조화 JSON |
 | 주문 연계 | StrategyExecution·주문 경로와 분리 |
 
-Shadow는 "저장하지 않을 예정"이 아니라 실제 read-only 실행과 write_count=0을 검증한 상태다. 다만 실행 시점 입력이 BLOCK이고 활성 Position이 0건이어서 실데이터 기반 v1·v2 차이 검증은 제한됐다.
+현재 Production Promotion Workflow는 Candidate Image로 Shadow Family의 신규 Revision을 등록하고, GitHub Workflow가 ECS RunTask로 BUY Shadow와 Position Shadow를 직접 실행한다. 별도의 `portfolio-paper-decision-shadow-canary` State Machine은 기존 Shadow 검증 자원으로 존재하지만 현재 Promotion Workflow의 Candidate 실행 주체는 아니다. Candidate 실행에서 생성되는 일회성 Shadow Revision 번호는 문서에 고정값으로 기록하지 않는다.
 
 ### 8.4 운영 승격과 Rollback
 
 | 항목 | 값 |
 |---|---|
-| 운영 BUY Revision | `:3` |
-| 운영 Position Revision | `:3` |
-| 운영 Command | Shadow 옵션 없음 |
-| 신규 Image Tag | `ff4d285b87b9` |
-| 신규 Image 단축 Digest | `3be7251875f9` |
+| 승격 대상 | 운영 BUY·Position Task Definition |
+| 운영 Command | Shadow 옵션 없음, 기존 운영 로직 유지 |
+| BUY 운영 Command | `daily_buy_signal_run` |
+| Position 운영 Command | 기본 v1 `daily_position_signal_run` |
+| Promotion Image | 승인된 동일 Candidate Image를 재빌드 없이 사용 |
+| Candidate Image Tag | Git SHA 기반 `a01d90592a7c` |
 | 참조 State Machine | Decision Revision을 참조하는 5개 운영 State Machine |
-| 검증 방식 | `:2`→`:3` 승격, `:3`→`:2` Rollback, `:2`→`:3` 재승격 |
-| 최종 상태 | 운영 5개 State Machine이 Revision `:3` 참조 |
+| 전환 기준 | 기존 운영 `:3` 기준에서 신규 Revision 등록·전환, 이전 `:3` 참조 제거 확인 |
 
-승격·Rollback·재승격은 동일 Image Digest를 재빌드 없이 사용했다. Shadow Revision은 `:1`로 유지된다.
+2026-07-31에는 `:2`→`:3` 승격, `:3`→`:2` Rollback, `:2`→`:3` 재승격으로 Rollback 경로를 검증했다. 2026-08-10 최종 Production Promotion은 승인된 Candidate Image를 기존 운영 `:3` 기준에서 신규 Revision으로 등록하고 5개 운영 State Machine 참조를 전환한 뒤 이전 `:3` 참조 제거를 검증했다. 실제 현재 운영 Revision 번호는 라이브 AWS 상태로 확인하며 문서에 고정값으로 추정 기록하지 않는다.
 
 ### 8.5 운영 Step 6·7 E2E 현황
 
@@ -289,6 +289,27 @@ Shadow는 "저장하지 않을 예정"이 아니라 실제 read-only 실행과 w
 이 E2E는 Decision 단계까지의 검증이며 전체 Paper Daily Step 1~17이나 주문 체결 검증이 아니다. 실행 당시 입력이 BLOCK이고 Position이 0건이어서 결과는 0건이며, 이는 검증 실패가 아니라 입력 조건에 따른 정상 결과다.
 
 실제 cluster, task definition ARN, image URI, subnet, security group, command id와 credential은 README에 기록하지 않는다.
+
+### 8.6 Decision Comparison
+
+2026-08-10에 운영 DB 결과와 Shadow CloudWatch JSON을 자동 비교하는 Decision Comparison이 실데이터로 수행됐다.
+
+| 항목 | 값 |
+|---|---|
+| 비교 주체 | `decision_comparator.py` |
+| ECS 실행 wrapper | `decision_comparison_ecs_run.py` |
+| 비교 대상 | 운영 Daily Run 결과(BUY·Position)와 Shadow JSON |
+| DB 영향 | 운영 DB read-only 조회, Decision 결과 신규 저장 없음 |
+| 결과 4종 | MATCH, DIFFERENCE, REVIEW_REQUIRED, INVALID |
+
+| 결과 | 의미 |
+|---|---|
+| MATCH | 의미 있는 차이 없음 |
+| DIFFERENCE | 유효하지만 상세 값 차이 |
+| REVIEW_REQUIRED | 판단 변화처럼 사람이 확인해야 하는 차이 |
+| INVALID | 비교 자체를 신뢰할 수 없어 Promotion 대상 아님 |
+
+2026-08-10 실데이터 결과는 Market이 운영·Shadow 모두 BLOCK으로 MATCH, BUY Shadow Signal 0건, Shadow Position Decision 3건, write_count=0이었고 최종 결과는 `REVIEW_REQUIRED`였다. 자동 Comparison이 실데이터 차이를 실제로 탐지해 Review Gate까지 전달했다. 이 차이는 운영 v1과 Shadow v2 차이 및 실행 시점 active position population 차이를 포함하며, Candidate 코드가 운영 판단을 잘못 변경했다는 의미가 아니다. `INVALID`는 정상 Comparison 결과로 취급하지 않고 Promotion을 차단한다.
 
 ## 9. 컨테이너 이미지와 CI·배포 파이프라인
 
@@ -336,17 +357,34 @@ CodeArtifact Domain·Repository·endpoint의 전체 식별자는 문서에 기�
 
 `PUSH_IMAGE=false`는 품질 게이트만 수행하고 push를 건너뛴다. `PUSH_IMAGE=true`는 검증 후 ECR push와 Digest 확인을 수행한다.
 
-### 9.4 GitHub Actions와 실행
+### 9.4 GitHub Actions와 Release 흐름
 
 | 항목 | 값 |
 |---|---|
 | Workflow | `.github/workflows/decision-codebuild.yml` |
 | 트리거 | `workflow_dispatch` |
-| 인증 | GitHub OIDC |
-| 실행 | CodeBuild 시작과 상태 대기, 결과 판정 |
+| 인증 | GitHub OIDC (main branch trust) |
 | Source | GitHub Commit SHA를 CodeBuild Source Version으로 전달 |
+| 승인 | GitHub `production` Environment manual approval |
 
-Entrypoint Smoke는 argparse `--help` 경로만 실행하며 DB 연결과 운영 run 함수를 호출하지 않는다.
+현재 Workflow는 단순 CodeBuild 트리거가 아니라 아래 흐름을 담당한다.
+
+```text
+workflow_dispatch
+  → GitHub OIDC
+  → Decision CodeBuild (Git SHA Candidate Image)
+  → Candidate BUY/Position Shadow Task Definition 등록
+  → ECS BUY Shadow → Position Shadow 실행
+  → CloudWatch Shadow JSON 수집
+  → ECS Comparator 실행
+  → Comparison Report 수집과 GitHub Job Summary 생성
+  → production Environment 수동 승인
+  → 승인 시 Production Promotion
+  → 운영 BUY/Position 신규 Revision 등록
+  → 운영 5개 State Machine 참조 전환과 검증
+```
+
+Reject 시 Promotion이 실행되지 않으며, `INVALID` Comparison은 승인 단계로 진행하지 못한다. Entrypoint Smoke는 argparse `--help` 경로만 실행하며 DB 연결과 운영 run 함수를 호출하지 않는다. 상세 IAM Policy, OIDC subject 원문, 전체 ARN, subnet, security group, 계정 ID와 실행 ID는 문서에 기록하지 않는다.
 
 ## 10. 실행 방법
 
