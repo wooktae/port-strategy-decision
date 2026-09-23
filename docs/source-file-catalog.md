@@ -1,131 +1,131 @@
 # Source File Catalog
 
-`port_strategy_decision`의 주요 파일 책임, 입력·출력, 변경 영향과 실행 위험을 정리한다.
+Organizes the primary file responsibilities, inputs/outputs, change impact, and execution risk of `port_strategy_decision`.
 
-이 문서는 전체 repository inventory가 아니다. Decision 흐름을 이해하고 유지보수하는 데 필요한 파일만 관리한다.
+This document is not a full repository inventory. It manages only the files needed to understand and maintain the Decision flow.
 
-## 1. 문서 목적
+## 1. Document Purpose
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 대상 | `port_strategy_decision` 루트와 `docs/source-file-catalog.md` |
-| 기준 | 현재 문서화된 파일 구조, import, entrypoint와 데이터 계약 |
-| 제외 | build 결과물, cache, IDE 파일, `__pycache__`, 일회성 dump |
-| 주요 관점 | 파일 책임, 입력, 출력, DB 영향, 실행 위험, 변경 연동 |
-| 실제 실행 | 문서 정리 과정에서 수행하지 않음 |
-| 미확인 사항 | 실제 코드 최종 대조가 필요한 내용은 추정하지 않음 |
+| Target | `port_strategy_decision` root and `docs/source-file-catalog.md` |
+| Basis | Currently documented file structure, imports, entrypoints, and data contracts |
+| Excluded | build artifacts, cache, IDE files, `__pycache__`, one-time dumps |
+| Primary perspective | File responsibility, input, output, DB impact, execution risk, change linkage |
+| Actual execution | Not performed during the documentation reorganization |
+| Unconfirmed items | Do not assume content that requires a final comparison against the actual code |
 
-## 2. 서비스 흐름
+## 2. Service Flow
 
-| 단계 | 책임 |
+| Stage | Responsibility |
 |---|---|
-| Feature Load | total market·stock feature와 universe를 조회 |
-| Market Decision | 시장 상태와 허용 노출 범위를 판단 |
-| Buy Filter | 매수 후보를 선별 |
-| Sizing | 후보별 배분 수량과 비중을 계산 |
-| BUY Signal | 실행 계층이 소비할 READY signal을 저장 |
-| BLOCK Watch | BUY를 만들지 않고 관찰 후보만 저장 |
-| Position Decision | 활성 포지션을 HOLD·SELL·SKIP으로 평가 |
-| State Update | position decision과 최신 평가 상태를 저장 |
+| Feature Load | Query the total market/stock feature and universe |
+| Market Decision | Judge the market state and allowable exposure range |
+| Buy Filter | Select buy candidates |
+| Sizing | Compute the allocated quantity and weight per candidate |
+| BUY Signal | Store the READY signal that the execution layer will consume |
+| BLOCK Watch | Store only watch candidates without creating a BUY |
+| Position Decision | Evaluate active positions as HOLD/SELL/SKIP |
+| State Update | Store the position decision and the latest evaluated state |
 
-## 3. Root와 공통 파일
+## 3. Root and Common Files
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `__init__.py` | `port_strategy_decision` 패키지 import 기준점 |
-| `db_config.py` | `INTEREST_DB_*` 환경변수와 Decision DB 연결 설정 관리 |
-| `decision_comparator.py` | 운영 Decision 결과와 Shadow JSON 비교 및 report 생성 |
-| `decision_comparison_ecs_run.py` | ECS에서 Comparison을 실행하는 wrapper |
-| `requirements.txt` | 컨테이너에서 설치할 Python dependency 목록 |
-| `Dockerfile` | Daily Decision 컨테이너 이미지와 기본 CMD 정의 |
-| `.dockerignore` | 이미지 build 컨텍스트 제외 규칙 |
-| `pytest.ini` | pytest 설정 |
-| `.github/workflows/` | GitHub Actions → CodeBuild 트리거 |
-| `.devops/` | CI buildspec과 smoke script |
-| `tests/` | import·evaluator version contract 테스트 |
+| `__init__.py` | The import reference point for the `port_strategy_decision` package |
+| `db_config.py` | Manage the `INTEREST_DB_*` environment variables and the Decision DB connection settings |
+| `decision_comparator.py` | Compare operational Decision results against Shadow JSON and generate a report |
+| `decision_comparison_ecs_run.py` | Wrapper that runs the Comparison on ECS |
+| `requirements.txt` | List of Python dependencies to install in the container |
+| `Dockerfile` | Define the Daily Decision container image and the default CMD |
+| `.dockerignore` | Exclusion rules for the image build context |
+| `pytest.ini` | pytest configuration |
+| `.github/workflows/` | GitHub Actions → CodeBuild trigger |
+| `.devops/` | CI buildspec and smoke scripts |
+| `tests/` | import/evaluator version contract tests |
 
 ### 3.1 `__init__.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | 패키지 초기화 |
-| 기능 로직 | 없음 |
-| 변경 영향 | `python -m port_strategy_decision.<module>` import 구조 |
-| 주의 | 기능이 없어 보여도 임의 삭제하지 않음 |
+| Responsibility | Package initialization |
+| Functional logic | None |
+| Change impact | The `python -m port_strategy_decision.<module>` import structure |
+| Caution | Do not delete arbitrarily even though it appears to have no functionality |
 
 ### 3.2 `db_config.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | PostgreSQL 접속 설정 중앙화 |
-| 주요 입력 | `INTEREST_DB_HOST`, `PORT`, `NAME`, `USER`, `PASSWORD` |
-| Password | 기본값 없이 외부에서 주입 |
-| Search path | Decision과 연계 domain schema 탐색 순서 설정 |
-| 호출 영향 | 연결 생성 시 DB 접속 발생 가능 |
-| 변경 위험 | 기본 DB, schema 순서와 credential 처리 계약 |
-| 주의 | 실제 접속값을 문서·로그에 기록하지 않음 |
+| Responsibility | Centralize the PostgreSQL connection settings |
+| Primary input | `INTEREST_DB_HOST`, `PORT`, `NAME`, `USER`, `PASSWORD` |
+| Password | Injected externally with no default |
+| Search path | Configure the search order of the Decision-related domain schemas |
+| Call impact | A DB connection may occur when a connection is created |
+| Change risk | The default DB, schema order, and credential-handling contract |
+| Caution | Do not record actual connection values in documentation or logs |
 
 ### 3.3 `requirements.txt`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 현재 명시 dependency | `psycopg2-binary` |
-| Common 처리 | `port_strategy_common`은 requirements가 아니라 Docker build 시 1.0.0 Wheel로 설치 |
-| 변경 영향 | 이미지 build와 runtime import |
-| 주의 | 실제 import 확인 없이 dependency를 임의 추가·삭제하지 않음 |
+| Currently declared dependency | `psycopg2-binary` |
+| Common handling | `port_strategy_common` is not a requirement; it is installed as a 1.0.0 Wheel during Docker build |
+| Change impact | Image build and runtime import |
+| Caution | Do not arbitrarily add/remove dependencies without confirming actual imports |
 
 ### 3.4 `Dockerfile`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 기반 이미지 | Python 3.13 slim |
-| 포함 대상 | `port_strategy_common`, `port_strategy_decision` |
-| Common 설치 | `.devops/packages`의 1.0.0 Wheel을 `--no-deps` 설치 |
-| 기본 CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
-| 다른 진입점 | 실행 시 command override 사용 가능 |
-| 운영 위치 | ECS RunTask 또는 동일 컨테이너 실행 대상 |
-| 저장소 경계 | ECR push와 task definition 등록은 배포 영역 |
-| 주의 | 실제 URI, ARN, subnet, security group을 문서에 기록하지 않음 |
+| Base image | Python 3.13 slim |
+| Included targets | `port_strategy_common`, `port_strategy_decision` |
+| Common installation | `--no-deps` install of the 1.0.0 Wheel in `.devops/packages` |
+| Default CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
+| Other entrypoints | A command override can be used at execution time |
+| Operational position | ECS RunTask or the same container execution target |
+| Repository boundary | ECR push and task definition registration are in the deployment domain |
+| Caution | Do not record actual URI, ARN, subnet, and security group in documentation |
 
-### 3.5 CI·배포 구성
+### 3.5 CI/Deployment Configuration
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `.github/workflows/decision-codebuild.yml` | CodeBuild, Candidate Shadow, CloudWatch 수집, Comparator, GitHub Summary, `production` 승인과 Production Promotion 담당 |
-| `.devops/codebuild/buildspec.yml` | 품질 게이트, Common Wheel download, Docker build, 선택적 ECR push |
-| `.devops/scripts/container-smoke.py` | import-only smoke, DB 연결·run 함수 미호출 |
-| `.devops/scripts/entrypoint-smoke.py` | argparse `--help` 경로만 실행하는 entrypoint smoke |
-| `.dockerignore` | 이미지 build 컨텍스트 제외 규칙 |
+| `.github/workflows/decision-codebuild.yml` | Owns CodeBuild, Candidate Shadow, CloudWatch collection, Comparator, GitHub Summary, `production` approval, and Production Promotion |
+| `.devops/codebuild/buildspec.yml` | Quality gates, Common Wheel download, Docker build, optional ECR push |
+| `.devops/scripts/container-smoke.py` | import-only smoke, no DB connection/run function call |
+| `.devops/scripts/entrypoint-smoke.py` | entrypoint smoke that runs only the argparse `--help` path |
+| `.dockerignore` | Exclusion rules for the image build context |
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 인증 | GitHub OIDC |
-| Common Wheel | CodeArtifact 1.0.0 Wheel을 `.devops/packages`에 준비 |
-| Wheel 추적 | `.devops/packages/*.whl`은 git-ignore된 빌드 산출물 |
-| ECR push | `PUSH_IMAGE=true`에서만 수행 |
-| 실행 위험 | buildspec은 AWS·Docker 호출 포함, 문서 작업 중 실행하지 않음 |
-| 민감정보 | Account ID, ARN, 전체 Digest, CodeArtifact 전체 식별자 미기록 |
+| Authentication | GitHub OIDC |
+| Common Wheel | Prepare the CodeArtifact 1.0.0 Wheel in `.devops/packages` |
+| Wheel tracking | `.devops/packages/*.whl` is a git-ignored build artifact |
+| ECR push | Performed only when `PUSH_IMAGE=true` |
+| Execution risk | buildspec includes AWS/Docker calls; do not run during documentation work |
+| Sensitive information | Account ID, ARN, full Digest, and full CodeArtifact identifiers not recorded |
 
-### 3.6 테스트
+### 3.6 Tests
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `pytest.ini` | pytest 설정 |
-| `tests/conftest.py` | flat 레이아웃용 `port_strategy_decision` 패키지 등록 |
-| `tests/test_import_contract.py` | Decision·Common 모듈 import 계약 (DB·run 미호출) |
-| `tests/test_position_version_contract.py` | Evaluator version 기본 v1, 지원 {v1,v2} 계약 |
+| `pytest.ini` | pytest configuration |
+| `tests/conftest.py` | Register the `port_strategy_decision` package for the flat layout |
+| `tests/test_import_contract.py` | Decision/Common module import contract (no DB/run call) |
+| `tests/test_position_version_contract.py` | Evaluator version default v1, supported {v1,v2} contract |
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 성격 | side effect 없는 정적 계약 검증 |
-| 실행 위험 | DB·주문·AWS 미접근 |
-| 연동 | buildspec Unit·Contract Test 단계 |
+| Nature | Static contract validation with no side effects |
+| Execution risk | No DB/order/AWS access |
+| Linkage | buildspec Unit/Contract Test stage |
 
 ## 4. Daily Buy Signal
 
-Daily Buy 흐름은 feature를 읽고 market, filter와 sizing을 수행한 뒤 BUY signal 또는 BLOCK watch를 저장한다.
+The Daily Buy flow reads features, performs market, filter, and sizing, and then stores a BUY signal or BLOCK watch.
 
-| 순서 | 파일 |
+| Order | File |
 |---|---|
 | 1 | `daily_buy_signal_run.py` |
 | 2 | `daily_feature_loader.py` |
@@ -134,426 +134,426 @@ Daily Buy 흐름은 feature를 읽고 market, filter와 sizing을 수행한 뒤 
 | 5 | `backtest_sizing.py` |
 | 6 | `daily_signal_builder.py` |
 | 7 | `daily_repository.py` |
-| 분기 | `daily_block_watch_builder.py`, `daily_block_watch_repository.py` |
+| Branch | `daily_block_watch_builder.py`, `daily_block_watch_repository.py` |
 
 ### 4.1 `daily_buy_signal_run.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Daily BUY 전체 흐름 orchestration |
-| 주요 입력 | Run date, data date, total feature와 strategy config |
-| 주요 처리 | Feature load, market, filter, sizing과 저장 |
-| 정상 시장 출력 | Daily run과 BUY signal |
-| BLOCK 시장 출력 | BUY signal 없이 watch candidate |
-| 상태 처리 | Daily run lifecycle 갱신 |
-| DB 영향 | 조회와 쓰기 |
-| 후속 영향 | StrategyExecution이 소비할 signal 생성 가능 |
-| 실행 모드 | 운영 모드와 read-only `--shadow` 모드 (write_count=0, JSON) |
-| Shadow 출력 | Shadow BUY JSON에 Comparison용 `target_qty` 포함 |
-| 실행 위험 | 운영 모드는 실제 운영 데이터 변경 |
-| 주의 | 문서화·정적 분석 중 실행하지 않음 |
+| Responsibility | Orchestrate the full Daily BUY flow |
+| Primary input | Run date, data date, total feature, and strategy config |
+| Primary processing | Feature load, market, filter, sizing, and storage |
+| Normal-market output | Daily run and BUY signal |
+| BLOCK-market output | watch candidate without a BUY signal |
+| Status handling | Update the Daily run lifecycle |
+| DB impact | Query and write |
+| Downstream impact | Can generate a signal for StrategyExecution to consume |
+| Execution modes | Operational mode and read-only `--shadow` mode (write_count=0, JSON) |
+| Shadow output | Include `target_qty` for Comparison in the Shadow BUY JSON |
+| Execution risk | Operational mode changes actual operational data |
+| Caution | Do not run during documentation/static analysis |
 
 ### 4.2 `daily_feature_loader.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Daily 판단 입력 조회 |
-| 날짜 책임 | Run date와 data date 결정 |
-| Market 입력 | `pre_total_market_daily_feature` |
-| Stock 입력 | `pre_total_stock_daily_feature` |
-| Universe 입력 | `stock_universe` |
-| DB 영향 | 조회 |
-| 변경 위험 | 날짜 기준, table, filter와 row shape |
-| 연동 파일 | `daily_buy_signal_run.py`, `backtest_market.py`, `backtest_filter.py` |
-| 주의 | 누락 feature와 빈 결과를 정상값으로 임의 변환하지 않음 |
+| Responsibility | Query the Daily decision inputs |
+| Date responsibility | Determine run date and data date |
+| Market input | `pre_total_market_daily_feature` |
+| Stock input | `pre_total_stock_daily_feature` |
+| Universe input | `stock_universe` |
+| DB impact | Query |
+| Change risk | Date basis, table, filter, and row shape |
+| Linked files | `daily_buy_signal_run.py`, `backtest_market.py`, `backtest_filter.py` |
+| Caution | Do not arbitrarily convert a missing feature and empty result into a normal value |
 
 ### 4.3 `daily_signal_builder.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Sizing 결과를 저장 가능한 BUY signal row로 변환 |
-| 주요 입력 | Sizing 결과와 stock feature |
-| 주요 출력 | `strategy_daily_signal` 저장 형식 |
-| 고정 의미 | `signal_type=BUY` |
-| 초기 상태 | `signal_status=READY` |
-| 주요 payload | Feature snapshot, buy info, raw feature와 entry reason |
-| DB 직접 쓰기 | 없음 |
-| 변경 위험 | 필드명, 상태값, reason과 source table 의미 |
-| 주의 | Builder 출력은 StrategyExecution 계약과 연결됨 |
+| Responsibility | Convert sizing results into a storable BUY signal row |
+| Primary input | Sizing results and stock feature |
+| Primary output | `strategy_daily_signal` storage format |
+| Fixed meaning | `signal_type=BUY` |
+| Initial status | `signal_status=READY` |
+| Primary payload | Feature snapshot, buy info, raw feature, and entry reason |
+| Direct DB write | None |
+| Change risk | Field names, status values, reasons, and source table meaning |
+| Caution | The Builder output is connected to the StrategyExecution contract |
 
 ### 4.4 `daily_repository.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Daily run과 BUY signal persistence |
-| 주요 table | `strategy_daily_run`, `strategy_daily_signal` |
-| 주요 처리 | 생성, 조회, 상태 갱신과 signal upsert |
-| DB 영향 | 읽기와 쓰기 |
-| 재실행 위험 | 동일 기준일 중복 또는 기존 row 갱신 |
-| 변경 위험 | Unique key, run status, signal status와 upsert |
-| 연동 파일 | `daily_buy_signal_run.py`, `daily_signal_builder.py` |
-| 주의 | 부분 저장 후 성공 처리되지 않도록 transaction 경계를 확인 |
+| Responsibility | Daily run and BUY signal persistence |
+| Primary tables | `strategy_daily_run`, `strategy_daily_signal` |
+| Primary processing | Creation, query, status update, and signal upsert |
+| DB impact | Read and write |
+| Re-run risk | Same-reference-date duplication or existing-row update |
+| Change risk | Unique key, run status, signal status, and upsert |
+| Linked files | `daily_buy_signal_run.py`, `daily_signal_builder.py` |
+| Caution | Confirm the transaction boundary so it is not marked successful after a partial store |
 
 ## 5. BLOCK Watch
 
-BLOCK Watch는 시장이 BLOCK일 때 BUY signal을 만들지 않고 강한 예외 후보만 관찰용으로 남기는 보조 흐름이다.
+BLOCK Watch is an auxiliary flow that, when the market is BLOCK, does not create a BUY signal and leaves only strong exception candidates for watching.
 
 ### 5.1 `daily_block_watch_builder.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | BLOCK 후보 평가 결과를 저장 row로 변환 |
-| 공통 로직 | `evaluate_block_watch_candidate` |
-| 주요 입력 | Stock feature와 BLOCK 구간 후보 정보 |
-| 주요 출력 | `strategy_block_watch_candidate` 저장 형식 |
-| BUY 생성 | 하지 않음 |
-| 주문 생성 | 하지 않음 |
-| DB 직접 쓰기 | 없음 |
-| 변경 위험 | 후보 기준, reason과 payload 계약 |
-| 주의 | BUY 우회 경로로 바꾸지 않음 |
+| Responsibility | Convert BLOCK candidate evaluation results into storage rows |
+| Common logic | `evaluate_block_watch_candidate` |
+| Primary input | Stock feature and BLOCK-regime candidate information |
+| Primary output | `strategy_block_watch_candidate` storage format |
+| BUY generation | None |
+| Order generation | None |
+| Direct DB write | None |
+| Change risk | Candidate criteria, reason, and payload contract |
+| Caution | Do not turn it into a BUY-bypass path |
 
 ### 5.2 `daily_block_watch_repository.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | BLOCK watch candidate 저장과 정리 |
-| 주요 table | `strategy_block_watch_candidate` |
-| 주요 처리 | Upsert와 daily run 단위 삭제 |
-| DB 영향 | 쓰기와 삭제 |
-| 재실행 위험 | 기존 후보 삭제 후 재생성 범위 |
-| 변경 위험 | Unique key, delete 조건과 transaction |
-| 연동 파일 | `daily_buy_signal_run.py`, `daily_block_watch_builder.py` |
-| 주의 | 다른 run이나 기준일 후보를 삭제하지 않도록 범위 확인 |
+| Responsibility | Store and clean up BLOCK watch candidates |
+| Primary table | `strategy_block_watch_candidate` |
+| Primary processing | Upsert and per-daily-run deletion |
+| DB impact | Write and delete |
+| Re-run risk | Scope of deleting existing candidates and regenerating |
+| Change risk | Unique key, delete condition, and transaction |
+| Linked files | `daily_buy_signal_run.py`, `daily_block_watch_builder.py` |
+| Caution | Confirm the scope so candidates from another run or reference date are not deleted |
 
-## 6. Market·Filter·Sizing Adapter
+## 6. Market/Filter/Sizing Adapter
 
-이 파일들은 `port_strategy_common`의 판단 로직을 Decision 계층의 row와 객체 계약에 연결한다.
+These files connect the decision logic of `port_strategy_common` to the row and object contracts of the Decision layer.
 
 ### 6.1 `backtest_market.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Market feature를 Common market context로 변환 |
-| 공통 함수 | `common_decide_market` |
-| 주요 입력 | Total market feature row |
-| 주요 출력 | Decision 계층 `MarketDecision` |
-| DB 직접 접근 | 없음 |
-| 변경 위험 | Context field, config와 `MarketDecision` mapping |
-| 재사용 | Daily Buy와 decision snapshot |
-| 주의 | Common 함수 결과 의미를 Decision에서 재해석하지 않음 |
+| Responsibility | Convert the Market feature into the Common market context |
+| Common function | `common_decide_market` |
+| Primary input | Total market feature row |
+| Primary output | Decision-layer `MarketDecision` |
+| Direct DB access | None |
+| Change risk | Context field, config, and `MarketDecision` mapping |
+| Reuse | Daily Buy and decision snapshot |
+| Caution | Do not reinterpret the meaning of the Common function result in Decision |
 
 ### 6.2 `backtest_filter.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Stock feature 후보를 Common buy filter에 연결 |
-| 공통 함수 | `common_filter_buy_candidates` |
-| 주요 입력 | Stock feature 목록과 market decision |
-| 주요 출력 | 통과·제외 후보와 reason |
-| DB 직접 접근 | 없음 |
-| 변경 위험 | Candidate row field, filter config와 reason |
-| 재사용 | Daily Buy와 decision snapshot |
-| 주의 | 필터 탈락을 데이터 누락과 혼동하지 않음 |
+| Responsibility | Connect stock feature candidates to the Common buy filter |
+| Common function | `common_filter_buy_candidates` |
+| Primary input | Stock feature list and market decision |
+| Primary output | Passed/excluded candidates and reasons |
+| Direct DB access | None |
+| Change risk | Candidate row field, filter config, and reason |
+| Reuse | Daily Buy and decision snapshot |
+| Caution | Do not confuse a filter rejection with missing data |
 
 ### 6.3 `backtest_sizing.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | 필터 통과 후보의 position allocation 계산 연결 |
-| 공통 함수 | `common_allocate_positions` |
-| 주요 입력 | Buy candidate와 market decision |
-| 주요 출력 | 후보별 sizing 결과 |
-| DB 직접 접근 | 없음 |
-| 변경 위험 | 수량·비중 의미와 `SIZING_CONFIG` |
-| 재사용 | Daily Buy와 decision snapshot |
-| 주의 | 반올림, 최소 주문과 exposure 의미를 임의 변경하지 않음 |
+| Responsibility | Connect the position allocation calculation for filter-passed candidates |
+| Common function | `common_allocate_positions` |
+| Primary input | Buy candidate and market decision |
+| Primary output | Sizing result per candidate |
+| Direct DB access | None |
+| Change risk | Quantity/weight meaning and `SIZING_CONFIG` |
+| Reuse | Daily Buy and decision snapshot |
+| Caution | Do not arbitrarily change the meaning of rounding, minimum order, and exposure |
 
-## 7. Decision Snapshot 후보
+## 7. Decision Snapshot Candidate
 
 ### 7.1 `backtest_decision_run.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | 단일 일자 market·filter·sizing snapshot 출력 |
-| 주요 입력 | DB의 market·stock feature |
-| 사용 adapter | `backtest_market.py`, `backtest_filter.py`, `backtest_sizing.py` |
-| Run store | Common run store를 사용하지 않음 |
-| Run id 생성 | 하지 않음 |
-| DB 영향 | Feature 조회 |
-| 출력 | 판단 snapshot 콘솔 출력 |
-| 분류 | Backtest 성격의 실행 후보 |
-| 실행 위험 | 운영 DB 조회와 데이터 출력 |
-| 주의 | 문서화 작업과 backtest 금지 범위에서는 실행하지 않음 |
+| Responsibility | Output a single-day market/filter/sizing snapshot |
+| Primary input | market/stock feature from the DB |
+| Used adapters | `backtest_market.py`, `backtest_filter.py`, `backtest_sizing.py` |
+| Run store | Does not use the Common run store |
+| Run id generation | None |
+| DB impact | Feature query |
+| Output | Decision snapshot console output |
+| Classification | An execution candidate of a backtest nature |
+| Execution risk | Operational DB query and data output |
+| Caution | Do not run under documentation work and backtest-prohibition scope |
 
 ## 8. Daily Position Decision
 
-Position 흐름은 최신 완료 daily run, 활성 포지션, broker snapshot과 feature를 결합해 HOLD, SELL 또는 SKIP 판단을 저장한다.
+The Position flow combines the latest completed daily run, active positions, broker snapshot, and feature to store a HOLD, SELL, or SKIP decision.
 
-| 순서 | 파일 |
+| Order | File |
 |---|---|
 | 1 | `daily_position_signal_run.py` |
 | 2 | `daily_position_repository.py` |
-| 3 | `daily_position_evaluator.py` 또는 `daily_position_evaluator_v2.py` |
+| 3 | `daily_position_evaluator.py` or `daily_position_evaluator_v2.py` |
 | 4 | `daily_position_repository.py` |
 
 ### 8.1 `daily_position_signal_run.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Position 조회, 평가, 저장과 요약 orchestration |
-| 주요 입력 | 최신 완료 run, active position, broker snapshot과 feature |
-| Evaluator | v1 또는 v2, 운영 기본 v1 |
-| 실행 모드 | 운영 모드와 read-only `--shadow` 모드 (write_count=0, JSON) |
-| 주요 출력 | HOLD, SELL, SKIP decision |
-| DB 영향 | 조회와 쓰기 |
-| 상태 영향 | `strategy_position_state` 최신 평가 갱신 |
-| 후속 영향 | StrategyExecution의 매도 판단 입력 가능 |
-| 실행 위험 | 운영 모드는 position decision 변경 |
-| 주의 | 문서화·정적 분석 중 실행하지 않음 |
+| Responsibility | Orchestrate Position query, evaluation, storage, and summary |
+| Primary input | Latest completed run, active position, broker snapshot, and feature |
+| Evaluator | v1 or v2, operational default v1 |
+| Execution modes | Operational mode and read-only `--shadow` mode (write_count=0, JSON) |
+| Primary output | HOLD, SELL, SKIP decision |
+| DB impact | Query and write |
+| State impact | Update `strategy_position_state` latest evaluation |
+| Downstream impact | Can be input to the StrategyExecution sell decision |
+| Execution risk | Operational mode changes the position decision |
+| Caution | Do not run during documentation/static analysis |
 
 ### 8.2 `daily_position_evaluator.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Daily Position v1 판단 |
-| 주요 기준 | Hard stop, 최소·최대 보유일과 market BLOCK |
-| 추가 기준 | 품질 저하와 수익권 HOLD |
-| 주요 출력 | HOLD, SELL 또는 SKIP 저장 dict |
-| DB 직접 접근 | 없음 |
-| DB 직접 쓰기 | 없음 |
-| 변경 위험 | 기준 우선순위, 상태값과 reason |
-| 주의 | 기존 운영 SELL v1 의미와 호환 유지 |
+| Responsibility | Daily Position v1 decision |
+| Primary criteria | Hard stop, minimum/maximum holding days, and market BLOCK |
+| Additional criteria | Quality degradation and in-profit HOLD |
+| Primary output | HOLD, SELL, or SKIP storage dict |
+| Direct DB access | None |
+| Direct DB write | None |
+| Change risk | Criteria priority, status values, and reasons |
+| Caution | Maintain compatibility with the existing operational SELL v1 meaning |
 
 ### 8.3 `daily_position_evaluator_v2.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Daily 검증과 Common sell 판단 결합 |
-| 선행 처리 | Daily 운영용 필수 검증 |
-| 공통 함수 | `common_evaluate_backtest_sell` |
-| 주요 출력 | Common 결과를 Daily decision 형식으로 mapping |
-| DB 직접 접근 | 없음 |
-| 변경 위험 | 선행 검증 순서, mapping, status와 reason |
-| 주의 | Common 결과를 누락하거나 다른 의미로 변환하지 않음 |
+| Responsibility | Combine daily validation and the Common sell decision |
+| Preceding processing | Required validation for daily operations |
+| Common function | `common_evaluate_backtest_sell` |
+| Primary output | Map the Common result into the Daily decision format |
+| Direct DB access | None |
+| Change risk | Preceding validation order, mapping, status, and reason |
+| Caution | Do not omit the Common result or convert it to a different meaning |
 
 ### 8.4 `daily_position_repository.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | Position 판단에 필요한 조회와 결과 저장 |
-| 주요 조회 | Active position, broker snapshot, stock·market feature |
-| 주요 저장 | `strategy_daily_position_decision` |
-| 상태 갱신 | `strategy_position_state` latest 평가 |
-| DB 영향 | 읽기와 쓰기 |
-| 재실행 위험 | 동일 position·기준일 decision 중복 또는 갱신 |
-| 변경 위험 | Join 기준, unique key, upsert와 latest 갱신 |
-| 주의 | Broker snapshot 누락과 실제 0 position을 구분 |
+| Responsibility | Query needed for the Position decision and store results |
+| Primary query | Active position, broker snapshot, stock/market feature |
+| Primary storage | `strategy_daily_position_decision` |
+| State update | `strategy_position_state` latest evaluation |
+| DB impact | Read and write |
+| Re-run risk | Duplication or update of the same position/reference-date decision |
+| Change risk | Join basis, unique key, upsert, and latest update |
+| Caution | Distinguish a missing broker snapshot from an actual 0 position |
 
-## 9. 검증·조회 도구
+## 9. Validation/Query Tools
 
 ### 9.1 `daily_validator.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | 최신 daily run과 연결 signal 조회 |
-| DB 영향 | 조회 |
-| 출력 | 운영 데이터 콘솔 출력 |
-| 검증 성격 | 사람이 저장 결과를 확인하는 보조 도구 |
-| 변경 위험 | 조회 기준과 출력 범위 |
-| 보안 위험 | 계좌·종목·운영 데이터 노출 가능성 |
-| 실행 조건 | 출력 필드와 대상 환경을 먼저 확인 |
-| 주의 | 안전한 정적 분석 도구로 간주하지 않음 |
+| Responsibility | Query the latest daily run and linked signals |
+| DB impact | Query |
+| Output | Operational data console output |
+| Validation nature | An auxiliary tool for a human to inspect storage results |
+| Change risk | Query basis and output scope |
+| Security risk | Possible exposure of account/stock/operational data |
+| Execution condition | First confirm the output fields and target environment |
+| Caution | Do not regard it as a safe static analysis tool |
 
 ### 9.2 `decision_comparator.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | 운영 Decision 결과와 Shadow JSON 비교 및 report 생성 |
-| 입력 | Shadow JSONL과 운영 DB 조회 결과 |
-| 출력 | Comparison JSON report |
-| 결과 | MATCH / DIFFERENCE / REVIEW_REQUIRED / INVALID |
-| DB 영향 | 운영 DB read-only 조회 |
-| 변경 위험 | Promotion review 의미, BUY·Position identity와 comparison classification |
-| 주의 | 비교 결과를 Decision 자체 판단 결과로 저장하지 않음 |
+| Responsibility | Compare operational Decision results against Shadow JSON and generate a report |
+| Input | Shadow JSONL and operational DB query results |
+| Output | Comparison JSON report |
+| Results | MATCH / DIFFERENCE / REVIEW_REQUIRED / INVALID |
+| DB impact | Operational DB read-only query |
+| Change risk | Promotion review meaning, BUY/Position identity, and comparison classification |
+| Caution | Do not store the comparison result as a Decision decision result |
 
 ### 9.3 `decision_comparison_ecs_run.py`
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 책임 | ECS에서 Comparison을 실행하기 위한 wrapper |
-| 입력 | gzip+base64 Shadow JSONL 환경변수 |
-| 처리 | payload 복원 → comparator subprocess 실행 |
-| 출력 | base64 report marker와 Comparison result marker |
-| DB 영향 | Comparator를 통한 read-only 조회 |
-| 변경 위험 | GitHub Workflow report parsing과 Approval 연결 |
-| 주의 | 운영 BUY·Position entrypoint가 아님 |
+| Responsibility | Wrapper for running the Comparison on ECS |
+| Input | gzip+base64 Shadow JSONL environment variable |
+| Processing | Restore payload → run comparator subprocess |
+| Output | base64 report marker and Comparison result marker |
+| DB impact | read-only query through the Comparator |
+| Change risk | GitHub Workflow report parsing and Approval linkage |
+| Caution | It is not the operational BUY/Position entrypoint |
 
-## 10. 데이터 계약
+## 10. Data Contracts
 
-### 10.1 주요 입력
+### 10.1 Primary Inputs
 
-| 데이터 | 역할 |
+| Data | Role |
 |---|---|
-| `pre_total_market_daily_feature` | Market decision 입력 |
-| `pre_total_stock_daily_feature` | Buy filter, sizing과 position 평가 입력 |
-| `stock_universe` | 종목명(company_name) 보강용 LEFT JOIN 대상 |
-| Active position | 보유 포지션 평가 대상 |
-| `connector_balance_snapshot` | Position 평가에서 최신 broker snapshot 기준일 확인 |
-| `connector_position_snapshot` | Broker 보유 수량과 상태 확인 |
+| `pre_total_market_daily_feature` | Market decision input |
+| `pre_total_stock_daily_feature` | Buy filter, sizing, and position evaluation input |
+| `stock_universe` | LEFT JOIN target for enriching the company name (company_name) |
+| Active position | Held position evaluation target |
+| `connector_balance_snapshot` | Confirm the latest broker snapshot reference date in position evaluation |
+| `connector_position_snapshot` | Confirm broker holding quantity and state |
 
-### 10.2 주요 출력
+### 10.2 Primary Outputs
 
-| 데이터 | 역할 |
+| Data | Role |
 |---|---|
-| `strategy_daily_run` | Daily Buy 실행 단위와 lifecycle |
-| `strategy_daily_signal` | READY BUY 판단 |
-| `strategy_block_watch_candidate` | BLOCK 구간 관찰 후보 |
-| `strategy_daily_position_decision` | HOLD·SELL·SKIP 판단 이력 |
-| `strategy_position_state` | 포지션별 최신 전략 평가 상태 |
+| `strategy_daily_run` | Daily Buy execution unit and lifecycle |
+| `strategy_daily_signal` | READY BUY decision |
+| `strategy_block_watch_candidate` | Watch candidates in a BLOCK regime |
+| `strategy_daily_position_decision` | HOLD/SELL/SKIP decision history |
+| `strategy_position_state` | Latest strategy evaluation state per position |
 
-### 10.3 변경 시 확인할 계약
+### 10.3 Contracts to Confirm on Change
 
-| 항목 | 확인 내용 |
+| Item | Item to Confirm |
 |---|---|
-| Table | Schema, table name과 search path |
-| Column | Type, NULL 허용과 의미 |
-| Key | Unique key와 group key |
-| Date | Run date, data date와 기준일 |
-| Status | Run, signal과 position 상태값 |
-| Reason | Common과 downstream이 소비하는 문자열 |
-| Payload | Feature snapshot과 JSON shape |
-| Transaction | 부분 성공과 rollback 범위 |
-| Re-run | 중복, delete와 upsert 동작 |
+| Table | Schema, table name, and search path |
+| Column | Type, NULL allowance, and meaning |
+| Key | Unique key and group key |
+| Date | Run date, data date, and reference date |
+| Status | Run, signal, and position status values |
+| Reason | Strings consumed by Common and downstream |
+| Payload | Feature snapshot and JSON shape |
+| Transaction | Partial success and rollback scope |
+| Re-run | Duplication, delete, and upsert behavior |
 
-## 11. 실행 위험 분류
+## 11. Execution Risk Classification
 
-| 등급 | 의미 |
+| Level | Meaning |
 |---|---|
-| 읽기 | DB 조회와 운영 데이터 출력 가능 |
-| 쓰기 | Strategy table insert·update·upsert 가능 |
-| 삭제 | 특정 run 또는 기준일 row 삭제 가능 |
-| 후속 영향 | Execution 계층이 소비할 산출물 생성 가능 |
+| Read | Can query the DB and output operational data |
+| Write | Can insert/update/upsert Strategy tables |
+| Delete | Can delete rows for a specific run or reference date |
+| Downstream impact | Can generate an artifact that the Execution layer will consume |
 
-### 11.1 파일별 위험
+### 11.1 Per-File Risk
 
-| 파일 | 위험 |
+| File | Risk |
 |---|---|
-| `daily_buy_signal_run.py` | 조회, 쓰기와 후속 BUY 흐름 영향 |
-| `daily_repository.py` | Daily run·signal 쓰기 |
-| `daily_block_watch_repository.py` | Watch candidate 쓰기·삭제 |
-| `daily_position_signal_run.py` | 조회, decision 저장과 state 갱신 |
-| `daily_position_repository.py` | Position decision 쓰기와 state 갱신 |
-| `backtest_decision_run.py` | DB 조회와 snapshot 출력 |
-| `daily_validator.py` | DB 조회와 운영 데이터 출력 |
-| `decision_comparator.py` | 운영 DB read-only 조회와 Comparison report 생성 |
-| `decision_comparison_ecs_run.py` | Comparator wrapper, read-only 조회 |
-| `daily_feature_loader.py` | DB feature 조회 |
-| Builder·Evaluator·Adapter | 직접 DB 쓰기는 없지만 저장 계약에 영향 |
+| `daily_buy_signal_run.py` | Query, write, and impact on the downstream BUY flow |
+| `daily_repository.py` | Daily run/signal write |
+| `daily_block_watch_repository.py` | Watch candidate write/delete |
+| `daily_position_signal_run.py` | Query, decision storage, and state update |
+| `daily_position_repository.py` | Position decision write and state update |
+| `backtest_decision_run.py` | DB query and snapshot output |
+| `daily_validator.py` | DB query and operational data output |
+| `decision_comparator.py` | Operational DB read-only query and Comparison report generation |
+| `decision_comparison_ecs_run.py` | Comparator wrapper, read-only query |
+| `daily_feature_loader.py` | DB feature query |
+| Builder/Evaluator/Adapter | No direct DB write, but affects the storage contract |
 
-### 11.2 문서 작업 중 실행하지 않는 대상
+### 11.2 Targets Not Run During Documentation Work
 
-| 대상 | 이유 |
+| Target | Reason |
 |---|---|
-| Daily Buy entrypoint | Strategy run과 BUY signal 변경 가능 |
-| Position entrypoint | Position decision과 state 변경 가능 |
-| Repository 함수 | DB 쓰기·삭제 가능 |
-| Backtest snapshot | 운영 DB 조회 발생 |
-| Validator | 운영 데이터 출력 가능 |
-| Container default CMD | Daily Buy entrypoint 실행 |
-| AWS RunTask | 실제 운영 실행으로 연결 |
+| Daily Buy entrypoint | Can change the Strategy run and BUY signal |
+| Position entrypoint | Can change the Position decision and state |
+| Repository functions | Can write/delete the DB |
+| Backtest snapshot | An operational DB query occurs |
+| Validator | Can output operational data |
+| Container default CMD | Runs the Daily Buy entrypoint |
+| AWS RunTask | Connects to actual operational execution |
 
-## 12. `port_strategy_common` 연동
+## 12. `port_strategy_common` Linkage
 
-| 영역 | 연동 |
+| Area | Linkage |
 |---|---|
-| Config | Strategy name, engine version과 판단 config |
+| Config | Strategy name, engine version, and decision config |
 | Market | `common_decide_market` |
 | Buy Filter | `common_filter_buy_candidates` |
 | Sizing | `common_allocate_positions` |
-| Guard | Buy guard와 size haircut 계열 |
+| Guard | Buy guard and size haircut family |
 | BLOCK Watch | `evaluate_block_watch_candidate` |
 | Sell | `common_evaluate_backtest_sell` |
 
-### 변경 주의
+### Change Cautions
 
-| 항목 | 원칙 |
+| Item | Principle |
 |---|---|
-| Public 함수 | 명시 요청 없이 이름·signature 변경 금지 |
-| Dataclass | 필드명과 타입 계약 유지 |
-| Enum·상태값 | Downstream 호환 확인 |
-| Reason 문자열 | 저장 데이터와 화면·실행 계층 영향 확인 |
-| Config | Default와 snapshot 호환 확인 |
-| Wheel 설치 | 1.0.0 Wheel 설치 방식과 Dockerfile·buildspec 일치 유지 |
+| Public functions | Do not change names/signatures without an explicit request |
+| Dataclass | Preserve the field name and type contract |
+| Enum/status values | Confirm downstream compatibility |
+| Reason strings | Confirm the impact on stored data and the view/execution layer |
+| Config | Confirm default and snapshot compatibility |
+| Wheel installation | Keep the 1.0.0 Wheel installation method consistent with the Dockerfile/buildspec |
 
-## 13. AWS와 운영 위치
+## 13. AWS and Operational Position
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
 | Paper Daily Step 6 | `daily_buy_signal_run.py` |
 | Paper Daily Step 7 | `daily_position_signal_run.py` |
-| Orchestration | Scheduler와 Step Functions 책임 |
-| 실행 방식 | ECS RunTask 또는 동일 컨테이너 |
-| 기본 이미지 CMD | Daily Buy Signal |
-| Position 실행 | Command override 필요 |
-| 저장소 증거 | Dockerfile, Python entrypoint와 `.devops`·`.github` CI 구성 |
-| 외부 운영 사실 | Cluster, task definition과 Scheduler 문서에서 관리 |
+| Orchestration | Scheduler and Step Functions responsibility |
+| Execution method | ECS RunTask or the same container |
+| Default image CMD | Daily Buy Signal |
+| Position execution | Command override required |
+| Repository evidence | Dockerfile, Python entrypoint, and `.devops`/`.github` CI configuration |
+| External operational facts | Cluster, task definition, and Scheduler managed in documentation |
 
-Repository 파일로 확인되는 구조와 실제 AWS 현재 상태를 혼동하지 않는다.
+Do not confuse the structure confirmed from repository files with the actual current AWS state.
 
-## 14. 문서 파일
+## 14. Documentation Files
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `AGENTS.md` | 작업 범위, 안전, 데이터 계약과 완료 기준 |
-| `README.md` | 서비스 구조, 흐름, 설정과 운영 AS-IS |
-| `CHANGELOG.md` | 기능·문서 기준 변경 이력 |
-| `docs/source-file-catalog.md` | 파일 책임, 입출력과 변경 영향 |
+| `AGENTS.md` | Work scope, safety, data contracts, and completion criteria |
+| `README.md` | Service structure, flow, configuration, and operational AS-IS |
+| `CHANGELOG.md` | Functional/documentation-standard change history |
+| `docs/source-file-catalog.md` | File responsibility, input/output, and change impact |
 
-### 문서별 갱신 기준
+### Per-Document Update Criteria
 
-| 문서 | 갱신 조건 |
+| Document | Update Condition |
 |---|---|
-| `AGENTS.md` | 작업 규칙, 안전 기준과 필수 계약이 바뀜 |
-| `README.md` | 서비스 책임, 흐름, 설정, entrypoint와 운영 위치가 바뀜 |
-| `CHANGELOG.md` | 실제 기능, 구조 또는 문서 기준이 바뀜 |
-| `docs/source-file-catalog.md` | 파일 추가·삭제·이동, 책임, 입출력과 실행 위험이 바뀜 |
+| `AGENTS.md` | Work rules, safety standards, and required contracts change |
+| `README.md` | Service responsibility, flow, configuration, entrypoint, and operational position change |
+| `CHANGELOG.md` | Actual features, structure, or documentation standards change |
+| `docs/source-file-catalog.md` | File addition/deletion/move, responsibility, input/output, and execution risk change |
 
-날짜별 `docs/worklog/*.md`는 새로 만들지 않는다. 과거 생성 사실은 CHANGELOG의 당시 이력으로만 보존한다.
+Do not create date-specific `docs/worklog/*.md` files anew. Preserve past creation facts only as historical entries at the time in the CHANGELOG.
 
-## 15. 정리 후보
+## 15. Cleanup Candidates
 
-| 파일 | 현재 판단 |
+| File | Current Judgment |
 |---|---|
-| `backtest_decision_run.py` | DB 조회가 있는 snapshot 도구로 유지 |
-| `daily_validator.py` | 운영 조회·출력 도구로 유지 |
-| 기타 tracked source | 현재 삭제 확정 대상 없음 |
+| `backtest_decision_run.py` | Kept as a snapshot tool that queries the DB |
+| `daily_validator.py` | Kept as an operational query/output tool |
+| Other tracked source | No files currently confirmed for deletion |
 
-다음 조건을 충족하기 전에는 파일을 삭제하지 않는다.
+Do not delete a file before it meets the following conditions.
 
-| 확인 | 기준 |
+| Confirmation | Basis |
 |---|---|
-| Import | 다른 파일에서 참조하지 않음 |
-| Entrypoint | Local, Docker와 AWS command에서 호출하지 않음 |
-| DB 계약 | 운영 검증이나 수동 복구에 사용되지 않음 |
-| 문서 | README, CHANGELOG와 catalog에서 책임 정리 |
-| 승인 | 사용자의 명시적 삭제 요청 |
+| Import | Not referenced by another file |
+| Entrypoint | Not called from Local, Docker, and AWS commands |
+| DB contract | Not used for operational validation or manual recovery |
+| Document | Responsibility organized in the README, CHANGELOG, and catalog |
+| Approval | The user's explicit deletion request |
 
-## 16. 카탈로그 갱신 조건
+## 16. Catalog Update Conditions
 
-다음 변경이 발생하면 이 문서를 같은 작업에서 갱신한다.
+When the following changes occur, update this document in the same task.
 
-| 변경 | 반영 내용 |
+| Change | Reflected Content |
 |---|---|
-| 파일 추가 | 역할, 입력, 출력과 위험 추가 |
-| 파일 삭제 | 참조 제거와 삭제 이력 확인 |
-| 파일 이동 | 경로와 import·entrypoint 영향 수정 |
-| Entrypoint 변경 | Daily Step과 Docker CMD 반영 |
-| Table 변경 | 입력·출력 계약과 repository 책임 수정 |
-| Status 변경 | Builder, repository와 downstream 영향 수정 |
-| Common 변경 | Adapter mapping과 public 계약 수정 |
-| Docker 변경 | Runtime, Common Wheel 설치와 command 수정 |
-| CI·배포 구성 변경 | Workflow, buildspec과 smoke script 반영 |
-| 실행 위험 변경 | 읽기·쓰기·삭제·후속 영향 재분류 |
-| 문서 체계 변경 | AGENTS, README와 CHANGELOG 역할 정합성 수정 |
+| File addition | Add role, input, output, and risk |
+| File deletion | Remove references and confirm the deletion history |
+| File move | Fix the path and import/entrypoint impact |
+| Entrypoint change | Reflect the Daily Step and Docker CMD |
+| Table change | Fix the input/output contract and repository responsibility |
+| Status change | Fix the Builder, repository, and downstream impact |
+| Common change | Fix the Adapter mapping and public contract |
+| Docker change | Fix the runtime, Common Wheel installation, and command |
+| CI/deployment configuration change | Reflect the workflow, buildspec, and smoke script |
+| Execution risk change | Reclassify read/write/delete/downstream impact |
+| Document system change | Fix the role consistency of AGENTS, README, and CHANGELOG |
 
-카탈로그에는 확인된 현재 책임만 기록한다. 존재하지 않는 파일, 추정한 AWS 리소스와 미확인 동작은 추가하지 않는다.
+Record only confirmed current responsibilities in the catalog. Do not add nonexistent files, assumed AWS resources, or unconfirmed behavior.

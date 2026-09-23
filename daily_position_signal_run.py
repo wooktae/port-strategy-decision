@@ -1,8 +1,10 @@
-"""daily position HOLD/SELL/SKIP decision 생성 entrypoint.
+"""daily position HOLD/SELL/SKIP decision generation entrypoint.
 
-최신 완료 daily run과 활성 포지션을 읽어 v1/v2 evaluator로 판단한다.
-기본 운영 모드는 결과를 DB에 저장하고 position state latest 평가 값을 갱신한다.
---shadow 모드는 동일 입력과 evaluator를 사용하되 read-only transaction에서 결과만 JSON으로 출력한다.
+Reads the latest completed daily run and the active positions and evaluates them
+with the v1/v2 evaluator. The default operational mode persists the results to
+the DB and updates the position state latest evaluation values. The --shadow
+mode uses the same inputs and evaluator but only prints the results as JSON
+within a read-only transaction.
 """
 
 import argparse
@@ -151,7 +153,7 @@ def _validate_shadow_decision(decision: dict, seen_position_ids: set):
 
 
 def run_daily_position_decision(account_no=None, evaluator_version=None):
-    """활성 포지션별 daily position decision을 생성하고 저장한다."""
+    """Generate and persist a daily position decision for each active position."""
     evaluator_version = normalize_evaluator_version(evaluator_version)
 
     conn = get_conn()
@@ -280,7 +282,7 @@ def run_daily_position_decision_shadow(
     account_no=None,
     evaluator_version=None,
 ):
-    """운영 DB를 수정하지 않고 포지션 판단 결과를 JSON으로 출력한다."""
+    """Print the position decision results as JSON without modifying the operational DB."""
     evaluator_version = normalize_evaluator_version(evaluator_version)
 
     conn = get_conn()
@@ -397,7 +399,7 @@ def run_daily_position_decision_shadow(
 
 
 def validate_latest_daily_position_decisions():
-    """최신 daily run의 position decision을 조회해 콘솔에 출력한다."""
+    """Query the position decisions of the latest daily run and print them to the console."""
     conn = get_conn()
 
     try:

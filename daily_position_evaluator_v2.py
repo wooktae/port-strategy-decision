@@ -1,7 +1,8 @@
-"""daily position HOLD/SELL/SKIP v2 판단 모듈.
+"""daily position HOLD/SELL/SKIP v2 decision module.
 
-daily 운영 검증을 먼저 수행한 뒤 `port_strategy_common`의 common sell 판단을 재사용한다.
-DB 업데이트나 execution order 생성은 하지 않고 저장용 decision dict만 반환한다.
+Performs daily operational validation first, then reuses the common sell decision
+from `port_strategy_common`. It does not update the DB or create execution orders;
+it only returns a decision dict for storage.
 """
 
 import json
@@ -103,7 +104,7 @@ def get_feature_decimal(row: Optional[dict], key: str, default="0"):
 
 
 class DailySellDecisionAdapter:
-    """common sell 판단에 daily market signal을 전달하기 위한 최소 adapter."""
+    """Minimal adapter for passing the daily market signal to the common sell decision."""
 
     def __init__(self, signal_type: str):
         self.signal_type = signal_type
@@ -115,12 +116,12 @@ def _build_common_backtest_pos(
     current_cum_return: Decimal,
 ):
     """
-    common_evaluate_backtest_sell()은 내부에서 holding_days + 1,
-    prev_cum + today_ret 방식으로 계산함.
+    common_evaluate_backtest_sell() internally computes using holding_days + 1
+    and the prev_cum + today_ret approach.
 
-    Daily v2에서는 이미 현재 평가손익률(expected_pnl_rate)을 알고 있으므로,
-    today_ret=0으로 넣고 prev_cum=current_cum_return을 넣으면
-    common 내부 cum_return이 current_cum_return과 동일하게 유지됨.
+    In Daily v2 the current expected P&L rate (expected_pnl_rate) is already known,
+    so passing today_ret=0 and prev_cum=current_cum_return keeps the common
+    internal cum_return identical to current_cum_return.
     """
     return {
         "cum_return": float(current_cum_return),
@@ -139,7 +140,7 @@ def _build_common_feature(stock_feature: dict):
 
 def _map_common_sell_to_daily_decision(common_result: dict):
     """
-    common sell 결과를 daily_position_decision 저장 형식의 reason으로 변환.
+    Converts the common sell result into a reason in the daily_position_decision storage format.
     """
     sell_flag = bool(common_result.get("sell_flag"))
     sell_reason = common_result.get("sell_reason") or ""
@@ -207,14 +208,14 @@ def evaluate_daily_position_v2(
     market_feature: Optional[dict],
 ):
     """
-    Daily Position v2 판단.
+    Daily Position v2 decision.
 
-    목표:
-    - 기존 v1은 유지
-    - SELL/HOLD 판단 핵심은 common_evaluate_backtest_sell() 사용
-    - 운영 제약은 Daily 계층에서 먼저 처리
+    Goals:
+    - Keep the existing v1 intact
+    - The core of the SELL/HOLD decision uses common_evaluate_backtest_sell()
+    - Operational constraints are handled first in the Daily layer
       remaining_qty / broker_position / sellable_qty / price validation
-    - Daily hard stop은 현재 평가손익률 기준으로 선처리
+    - The Daily hard stop is handled first based on the current expected P&L rate
     """
 
     decision_date = daily_run["run_date"]
@@ -294,7 +295,7 @@ def evaluate_daily_position_v2(
     common_result = None
 
     # -----------------------------------------------------
-    # 0. 운영 제약 검증
+    # 0. Operational-constraint validation
     # -----------------------------------------------------
     if remaining_qty <= 0:
         decision_type = "SKIP"
@@ -322,9 +323,9 @@ def evaluate_daily_position_v2(
 
     else:
         # -----------------------------------------------------
-        # 1. Daily 운영 안전장치
-        # common/backtest hard_stop은 raw_today_ret 기준이지만,
-        # Daily Position은 현재 평가손익률 기준 손절이 필요함.
+        # 1. Daily operational safeguard
+        # The common/backtest hard_stop is based on raw_today_ret, but
+        # Daily Position needs a stop-loss based on the current expected P&L rate.
         # -----------------------------------------------------
         if expected_pnl_rate <= DAILY_HARD_STOP_LOSS_RATE:
             decision_type = "SELL"
@@ -351,7 +352,7 @@ def evaluate_daily_position_v2(
             )
 
         # -----------------------------------------------------
-        # 2. common/backtest SELL 판단
+        # 2. common/backtest SELL decision
         # -----------------------------------------------------
         else:
             common_pos = _build_common_backtest_pos(

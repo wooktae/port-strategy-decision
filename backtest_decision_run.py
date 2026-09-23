@@ -1,7 +1,8 @@
-"""단일 일자 decision snapshot을 생성하는 backtest 성격 entrypoint.
+"""Backtest-style entrypoint that generates a single-date decision snapshot.
 
-market/stock feature를 DB에서 조회하고 market/filter/sizing 결과를 출력한다.
-문서화 작업이나 운영 승인 없는 정리 작업 중에는 실행하지 않는다.
+Loads the market/stock features from the DB and prints the market/filter/sizing
+results. Do not run this during documentation work or cleanup work without
+operational approval.
 """
 
 import psycopg2
@@ -41,7 +42,7 @@ def load_stocks(conn, date):
 
 
 def run(date):
-    """DB feature를 읽어 단일 일자 market/filter/sizing 결과를 출력한다."""
+    """Read DB features and print the single-date market/filter/sizing results."""
     conn = get_conn()
 
     try:

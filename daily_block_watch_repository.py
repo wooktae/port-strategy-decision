@@ -1,7 +1,8 @@
-"""BLOCK watch 후보 저장 repository 모듈.
+"""repository module for storing BLOCK watch candidates.
 
-`strategy_block_watch_candidate`에 관찰 후보를 upsert/delete한다.
-BUY signal 또는 execution order를 생성하지 않으며, 호출자가 전달한 DB transaction 안에서 동작한다.
+Upserts/deletes watch candidates in `strategy_block_watch_candidate`.
+It does not create BUY signals or execution orders, and operates within the DB
+transaction passed in by the caller.
 """
 
 from __future__ import annotations
@@ -30,12 +31,12 @@ def _to_decimal_or_none(value: Any) -> Decimal | None:
 
 def insert_block_watch_candidates(conn, candidates: list[dict[str, Any]]) -> int:
     """
-    BLOCK Watch 후보를 저장한다.
+    Stores BLOCK Watch candidates.
 
-    중요:
-    - strategy_daily_signal에는 저장하지 않는다.
-    - strategy_execution_order도 만들지 않는다.
-    - 관찰/검증용 테이블에만 저장한다.
+    Important:
+    - Does not store into strategy_daily_signal.
+    - Does not create strategy_execution_order either.
+    - Only stores into the watch/validation table.
     """
 
     if not candidates:
@@ -129,11 +130,13 @@ def insert_block_watch_candidates(conn, candidates: list[dict[str, Any]]) -> int
 
 def delete_block_watch_candidates(conn, daily_run_id: int) -> int:
     """
-    daily_run 재실행 시 기존 Block Watch 후보를 지운다.
+    Deletes existing Block Watch candidates when a daily_run is re-run.
 
-    이유:
-    - create_or_replace_daily_run은 같은 run_date/data_date/run_type이면 daily_run_id를 재사용한다.
-    - 기존 후보가 남아 있으면 기준 변경/데이터 변경 후에도 오래된 Watch 후보가 남을 수 있다.
+    Reason:
+    - create_or_replace_daily_run reuses the daily_run_id for the same
+      run_date/data_date/run_type.
+    - If existing candidates remain, stale Watch candidates could linger even after
+      criteria changes or data changes.
     """
 
     sql = """

@@ -1,448 +1,448 @@
 # AGENTS.md - port_strategy_decision
 
-## 0. 최우선 문서 가독성 규칙
+## 0. Highest-Priority Documentation Readability Rules
 
-모든 작업은 정확성과 함께 읽기 쉬운 결과를 우선한다.
+All work prioritizes readable results together with accuracy.
 
-| 항목 | 규칙 |
+| Item | Rule |
 |---|---|
-| 기본 표 | 새로 만드는 독립 요약 표는 기본 2컬럼으로 작성한다. |
-| 권장 컬럼 | `항목 / 값`, `파일 / 역할`, `계층 / 책임`, `상태 / 의미`를 우선한다. |
-| 기존 표 | 기존 표에 행을 추가할 때는 기존 컬럼 구조를 유지한다. |
-| 긴 셀 | 한 셀에는 핵심 사실 1~2개만 넣고, 3개 이상이면 여러 행이나 상세 문서로 분리한다. |
-| 길이 제한 | 표 셀 300자, 일반 Markdown 한 줄 500자를 넘기지 않는다. |
-| 반복 금지 | 같은 설명을 README, CHANGELOG, source catalog에 장문으로 반복하지 않는다. |
-| 상태 표현 | 현재 구현, 설계 원칙, 운영 사실, 미검증 추정을 명확히 구분한다. |
-| 원문 출력 | raw log, 전체 SQL, 전체 DB 결과, 민감정보 원문을 문서에 넣지 않는다. |
-| 인코딩 | 한글 Markdown은 UTF-8 No BOM으로 저장한다. |
+| Default table | New standalone summary tables use two columns by default. |
+| Recommended columns | Prefer `Item / Value`, `File / Role`, `Layer / Responsibility`, `Status / Meaning`. |
+| Existing table | When adding a row to an existing table, preserve its existing column structure. |
+| Long cell | Put only 1–2 key facts in a cell; if there are 3 or more, split into multiple rows or a detailed document. |
+| Length limit | Do not exceed 300 characters per table cell or 500 characters per Markdown line. |
+| No repetition | Do not repeat the same explanation at length across the README, CHANGELOG, and source catalog. |
+| Status expression | Clearly distinguish current implementation, design principles, operational facts, and unverified assumptions. |
+| Verbatim output | Do not place raw logs, complete SQL, complete DB results, or verbatim sensitive information in documentation. |
+| Encoding | Save Korean Markdown as UTF-8 without BOM. |
 
-문서 역할은 아래처럼 분리한다.
+Document roles are separated as follows.
 
-| 문서 | 역할 |
+| Document | Role |
 |---|---|
-| `AGENTS.md` | Kiro가 작업할 때 지켜야 할 범위, 안전, 데이터 계약과 검증 규칙 |
-| `README.md` | 현재 구조, 책임 경계, 실행·설정 방법과 AS-IS 운영 이해 |
-| `CHANGELOG.md` | 실제 변경 이력과 당시 사실 보존 |
-| `docs/source-file-catalog.md` | 운영과 유지보수에 중요한 파일 역할, 입출력과 변경 영향 |
+| `AGENTS.md` | The scope, safety, data contracts, and validation rules Kiro must follow when working |
+| `README.md` | Current structure, responsibility boundaries, execution/configuration methods, and AS-IS operational understanding |
+| `CHANGELOG.md` | Actual change history and preservation of facts at the time |
+| `docs/source-file-catalog.md` | Role, input/output, and change impact of operationally and maintenance-important files |
 
-## 1. 적용 범위와 우선순위
+## 1. Scope and Priority
 
-- 이 파일은 `port_strategy_decision` 전용 최우선 작업 규칙이다.
-- 이 저장소 작업에서는 다른 마이크로서비스의 `AGENTS.md`를 작업 기준으로 사용하지 않는다.
-- `.kiro/AGENTS.md`와 상충하면 이 파일의 Decision 전용 규칙을 우선한다.
-- 현재 `port_strategy_decision` 루트와 하위 파일만 직접 수정한다.
-- 루트 밖 파일은 계약 확인을 위한 read-only 참고만 허용한다.
-- 사용자가 지정한 대상 파일이 있으면 그 파일만 수정한다.
-- 전체 workspace 전수 스캔, sub-agent, orchestrator, 신규 scanner 생성은 금지한다.
-- 변경은 작고 검증 가능한 범위로 유지한다.
+- This file is the highest-priority working rule dedicated to `port_strategy_decision`.
+- When working in this repository, do not use another microservice's `AGENTS.md` as the working basis.
+- If there is a conflict with `.kiro/AGENTS.md`, this file's Decision-specific rules take precedence.
+- Directly modify only the `port_strategy_decision` root and its subordinate files.
+- Files outside the root are allowed only as read-only reference for contract confirmation.
+- If the user specifies a target file, modify only that file.
+- A full workspace scan, sub-agent, orchestrator, and new scanner creation are prohibited.
+- Keep changes small and verifiable in scope.
 
-## 2. 서비스 책임
+## 2. Service Responsibility
 
-이 저장소는 Preprocessor가 만든 total feature를 읽어 daily decision을 생성하는 계층이다.
+This repository is the layer that reads the total feature produced by the Preprocessor and generates daily decisions.
 
-| 계층 | Decision 책임 |
+| Layer | Decision Responsibility |
 |---|---|
-| Market | 시장 상태, 노출 한도, 최대 보유 수, 최소 점수·수급 기준 판단 |
-| Buy Filter | 종목 feature를 매수 후보 기준에 맞게 필터링 |
-| Sizing | 후보별 수량과 비중 계산 |
-| Daily Buy | `strategy_daily_run`, `strategy_daily_signal` 생성과 상태 갱신 |
-| BLOCK Watch | BUY 차단 구간에서 관찰 후보만 별도 기록 |
-| Position | 활성 포지션을 HOLD, SELL, SKIP으로 평가 |
-| Adapter | `port_strategy_common` 판단 결과를 daily 저장 형식으로 변환 |
+| Market | Judge the market state, exposure limits, maximum position count, and minimum score/flow criteria |
+| Buy Filter | Filter stock features against buy candidate criteria |
+| Sizing | Compute quantity and weight per candidate |
+| Daily Buy | Create `strategy_daily_run`, `strategy_daily_signal` and update status |
+| BLOCK Watch | Separately record only watch candidates during a BUY-blocked regime |
+| Position | Evaluate active positions as HOLD, SELL, or SKIP |
+| Adapter | Convert `port_strategy_common` decision results into the daily storage format |
 
-Decision이 직접 담당하지 않는 범위는 아래와 같다.
+The scope Decision does not own directly is as follows.
 
-| 영역 | 담당 계층 |
+| Area | Owning Layer |
 |---|---|
-| 외부 데이터 수집 | Crawler |
-| raw 데이터 전처리와 total feature 생성 | Preprocessor |
-| execution plan과 주문 요청 구성 | StrategyExecution |
-| broker 주문, 체결, 잔고와 보유 동기화 | MarketConnector |
-| backtest 시나리오와 연구 보고서 | StrategyResearch |
-| 화면 조회와 승인 UI | View |
-| 전체 batch orchestration | Scheduler와 Step Functions |
-| 이미지 build, ECR push, task definition 등록 | 배포 파이프라인 |
+| External data collection | Crawler |
+| raw data preprocessing and total feature generation | Preprocessor |
+| execution plan and order request composition | StrategyExecution |
+| broker order, fill, balance, and holding synchronization | MarketConnector |
+| backtest scenarios and research reports | StrategyResearch |
+| view query and approval UI | View |
+| full batch orchestration | Scheduler and Step Functions |
+| image build, ECR push, task definition registration | Deployment pipeline |
 
-## 3. 핵심 실행 흐름
+## 3. Core Execution Flow
 
 ### 3.1 Daily Buy Signal
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `daily_buy_signal_run.py` | total feature를 읽어 market, filter, sizing, BUY와 BLOCK watch 흐름을 실행하는 진입점 |
-| `daily_feature_loader.py` | run date, data date와 market·stock feature를 조회 |
-| `backtest_market.py` | common market 판단 adapter |
+| `daily_buy_signal_run.py` | Entrypoint that reads the total feature and runs the market, filter, sizing, BUY, and BLOCK watch flow |
+| `daily_feature_loader.py` | Query run date, data date, and market/stock feature |
+| `backtest_market.py` | common market decision adapter |
 | `backtest_filter.py` | common buy filter adapter |
 | `backtest_sizing.py` | common sizing adapter |
-| `daily_signal_builder.py` | sizing 결과를 daily signal 저장 형식으로 변환 |
-| `daily_repository.py` | daily run과 signal 조회·저장·상태 갱신 |
-| `daily_block_watch_builder.py` | BLOCK 구간의 관찰 후보 선별 |
-| `daily_block_watch_repository.py` | block watch 후보 저장과 기존 범위 정리 |
+| `daily_signal_builder.py` | Convert sizing results into the daily signal storage format |
+| `daily_repository.py` | Query/store daily run and signal and update status |
+| `daily_block_watch_builder.py` | Select watch candidates during a BLOCK regime |
+| `daily_block_watch_repository.py` | Store block watch candidates and clean up the existing scope |
 
 ### 3.2 Daily Position Signal
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `daily_position_signal_run.py` | 최신 완료 run과 활성 포지션을 읽어 HOLD, SELL, SKIP을 생성하는 진입점 |
-| `daily_position_evaluator.py` | daily position v1 판단 |
-| `daily_position_evaluator_v2.py` | daily 검증 후 common sell 판단을 재사용하는 v2 adapter |
-| `daily_position_repository.py` | 포지션, broker snapshot, feature 조회와 decision 저장 |
+| `daily_position_signal_run.py` | Entrypoint that reads the latest completed run and active positions and generates HOLD, SELL, SKIP |
+| `daily_position_evaluator.py` | daily position v1 decision |
+| `daily_position_evaluator_v2.py` | v2 adapter that reuses the common sell decision after daily validation |
+| `daily_position_repository.py` | Query position, broker snapshot, feature and store decisions |
 
-### 3.3 조회와 보조 진입점
+### 3.3 Query and Auxiliary Entrypoints
 
-| 파일 | 취급 원칙 |
+| File | Handling Principle |
 |---|---|
-| `backtest_decision_run.py` | 단일 일자 decision snapshot 후보이며 DB 조회가 있으므로 문서 작업 중 실행하지 않는다. |
-| `daily_validator.py` | DB 조회와 출력이 포함될 수 있으므로 구조 확인 후에만 실행 여부를 판단한다. |
-| `decision_comparator.py` | 운영 DB read-only 조회와 Shadow JSON 비교 도구이므로 운영 중요 파일로 취급하고 문서 작업 중 실행하지 않는다. |
-| `decision_comparison_ecs_run.py` | ECS Comparator wrapper이며 운영 BUY·Position entrypoint가 아니다. |
-| test/debug/output 파일 | 운영 소스로 단정하지 않고 증거 확인 전에는 후보 또는 로컬 산출물로 표현한다. |
+| `backtest_decision_run.py` | A single-day decision snapshot candidate; because it queries the DB, do not run it during documentation work. |
+| `daily_validator.py` | May include DB queries and output, so decide whether to run it only after confirming its structure. |
+| `decision_comparator.py` | An operational DB read-only query and Shadow JSON comparison tool; treat it as an operationally important file and do not run it during documentation work. |
+| `decision_comparison_ecs_run.py` | An ECS Comparator wrapper; it is not the operational BUY/Position entrypoint. |
+| test/debug/output files | Do not assume they are operational sources; before confirming evidence, describe them as candidates or local artifacts. |
 
-## 4. 입력 데이터 계약
+## 4. Input Data Contract
 
-Decision은 원천 데이터를 직접 만들지 않는다. 아래 입력을 읽어 판단을 수행한다.
+Decision does not create source data directly. It reads the following inputs to make decisions.
 
-| 입력 | 역할 |
+| Input | Role |
 |---|---|
-| `pre_total_market_daily_feature` | market signal과 시장 단위 제한 판단 |
-| `pre_total_stock_daily_feature` | 종목 필터, sizing과 position 평가 |
-| `stock_universe` | 종목명(company_name) 보강용 LEFT JOIN 대상 |
-| `connector_balance_snapshot` | Position 평가에서 최신 broker snapshot 기준일 확인 |
-| `connector_position_snapshot` | broker 보유 상태 확인 |
-| `strategy_position_state` | 전략 포지션의 최신 평가 상태 |
+| `pre_total_market_daily_feature` | market signal and market-level limit decision |
+| `pre_total_stock_daily_feature` | Stock filter, sizing, and position evaluation |
+| `stock_universe` | LEFT JOIN target for enriching the company name (company_name) |
+| `connector_balance_snapshot` | Confirm the latest broker snapshot reference date in position evaluation |
+| `connector_position_snapshot` | Confirm broker holding state |
+| `strategy_position_state` | Latest evaluated state of the strategy position |
 
-입력 관련 규칙:
+Input-related rules:
 
-- run date와 data date를 혼용하지 않는다.
-- 동일 실행에서 market과 stock feature의 기준일 정합을 확인한다.
-- 최신 행이라는 이유만으로 미래 기준일 또는 미확정 데이터를 사용하지 않는다.
-- feature 누락과 실제 0값을 구분한다.
-- `NULL`, `0`, 음수, 문자열 상태를 임의로 같은 의미로 처리하지 않는다.
-- 입력 컬럼명과 table 구조를 추정하지 않는다.
-- 계약 변경 전에는 loader, evaluator, repository와 downstream 영향을 함께 확인한다.
+- Do not conflate run date and data date.
+- Confirm the reference-date consistency of the market and stock feature within the same execution.
+- Do not use a future reference date or unconfirmed data merely because it is the latest row.
+- Distinguish a missing feature from an actual 0 value.
+- Do not arbitrarily treat `NULL`, `0`, negatives, and string states as having the same meaning.
+- Do not assume input column names and table structures.
+- Before a contract change, confirm the impact on the loader, evaluator, repository, and downstream together.
 
-## 5. 출력과 상태 계약
+## 5. Output and Status Contract
 
-| 출력 | 의미 |
+| Output | Meaning |
 |---|---|
-| `strategy_daily_run` | daily buy 판단 실행 단위와 최종 상태 |
-| `strategy_daily_signal` | BUY 후보와 sizing 결과 |
-| `strategy_block_watch_candidate` | BLOCK 시장의 관찰 후보 |
-| `strategy_daily_position_decision` | 포지션 HOLD, SELL, SKIP 판단 |
-| `strategy_position_state` | 포지션의 최신 평가 상태 |
+| `strategy_daily_run` | daily buy decision execution unit and final status |
+| `strategy_daily_signal` | BUY candidates and sizing results |
+| `strategy_block_watch_candidate` | Watch candidates in a BLOCK market |
+| `strategy_daily_position_decision` | Position HOLD, SELL, SKIP decisions |
+| `strategy_position_state` | Latest evaluated state of a position |
 
-아래 계약은 명시 요청 없이 변경하지 않는다.
+Do not change the following contracts without an explicit request.
 
-- table과 column 이름
-- unique key와 conflict key
-- insert, update, delete와 upsert 범위
-- run status와 decision status 문자열
-- market signal, BUY, BLOCK, HOLD, SELL, SKIP 의미
-- reason code와 reason 문자열
-- evaluator version과 engine version
-- downstream이 읽는 필드와 정렬 기준
+- table and column names
+- unique key and conflict key
+- insert, update, delete, and upsert scope
+- run status and decision status strings
+- the meaning of market signal, BUY, BLOCK, HOLD, SELL, SKIP
+- reason code and reason strings
+- evaluator version and engine version
+- fields and sort order that downstream reads
 
-상태 처리 원칙:
+Status handling principles:
 
-- 시작, 완료, 실패 상태의 전환 조건을 확인한다.
-- 일부 signal 저장 후 run만 성공 처리되는 부분 성공을 만들지 않는다.
-- 예외를 catch한 뒤 성공 상태로 덮지 않는다.
-- 재실행 시 동일 run date와 data date의 중복 또는 잔존 row를 확인한다.
-- delete 후 insert 구조라면 삭제 범위와 transaction 경계를 먼저 확인한다.
-- repository 호출 순서 변경 시 partial commit 가능성을 점검한다.
+- Confirm the transition conditions for the start, complete, and failure states.
+- Do not create a partial success where only the run is marked successful after some signals are stored.
+- Do not overwrite with a success status after catching an exception.
+- On re-run, confirm duplicate or residual rows for the same run date and data date.
+- For a delete-then-insert structure, first confirm the delete scope and transaction boundary.
+- When changing the repository call order, inspect the possibility of a partial commit.
 
-## 6. Market, Filter와 Sizing 규칙
+## 6. Market, Filter, and Sizing Rules
 
-- market 판단은 `port_strategy_common` 결과를 Decision 형식으로 adapter 처리한다.
-- market signal, base exposure, max positions, min score와 flow 기준의 의미를 유지한다.
-- market이 BLOCK이면 정상 BUY signal을 생성하지 않는다.
-- BLOCK watch는 BUY 우회 경로가 아니라 관찰용 별도 산출물이다.
-- buy filter의 score, quality, flow, toxic guard 기준을 임의로 재해석하지 않는다.
-- sizing은 available cash, exposure, max positions, 최소 주문 단위와 haircut 의미를 보존한다.
-- float 변환 실패나 결측을 조용히 0으로 바꾸기 전에 기존 계약을 확인한다.
-- 후보 순서와 동점 처리 변경은 실제 주문 후보가 달라질 수 있으므로 기능 변경으로 취급한다.
+- The market decision adapts the `port_strategy_common` result into the Decision format.
+- Preserve the meaning of market signal, base exposure, max positions, min score, and flow criteria.
+- When the market is BLOCK, do not generate a normal BUY signal.
+- Block watch is not a BUY-bypass path but a separate watch artifact.
+- Do not arbitrarily reinterpret the buy filter's score, quality, flow, and toxic guard criteria.
+- Sizing preserves the meaning of available cash, exposure, max positions, minimum order unit, and haircut.
+- Before silently converting a float-conversion failure or a missing value to 0, confirm the existing contract.
+- Changing candidate order and tie handling can change the actual order candidates, so treat it as a functional change.
 
-## 7. Position Decision 규칙
+## 7. Position Decision Rules
 
-- v1과 v2 evaluator를 같은 구현으로 간주하지 않는다.
-- hard stop, 최소·최대 보유일, market BLOCK, 품질 저하와 수익권 HOLD 조건을 구분한다.
-- v2는 daily 운영 검증을 먼저 수행한 뒤 common sell 결과를 mapping하는 구조를 유지한다.
-- broker snapshot 누락과 실제 미보유를 구분한다.
-- active position, position state와 broker position의 ticker·수량 정합을 확인한다.
-- SELL 판단 생성과 실제 주문 실행을 같은 책임으로 표현하지 않는다.
-- position state latest 갱신 시 과거 decision 이력을 덮어쓰지 않는다.
-- evaluator version, reason과 priority 변경은 StrategyExecution 또는 운영 검증에 영향을 줄 수 있다.
+- Do not treat the v1 and v2 evaluators as the same implementation.
+- Distinguish the hard stop, minimum/maximum holding days, market BLOCK, quality degradation, and in-profit HOLD conditions.
+- Preserve the structure where v2 first performs daily operational validation and then maps the common sell result.
+- Distinguish a missing broker snapshot from an actual non-holding.
+- Confirm the ticker/quantity consistency among the active position, position state, and broker position.
+- Do not express SELL decision generation and actual order execution as the same responsibility.
+- When updating position state latest, do not overwrite past decision history.
+- Changes to evaluator version, reason, and priority can affect StrategyExecution or operational validation.
 
-## 8. `port_strategy_common` 의존성
+## 8. `port_strategy_common` Dependency
 
-이 저장소는 핵심 판단 로직을 공통 모듈에서 재사용한다.
+This repository reuses core decision logic from the common module.
 
-| 영역 | 주요 공통 계약 |
+| Area | Primary Common Contract |
 |---|---|
-| Config | strategy name, engine version, market·filter·sizing 설정과 snapshot |
-| Market | common market context와 market decision |
+| Config | strategy name, engine version, market/filter/sizing settings and snapshot |
+| Market | common market context and market decision |
 | Filter | common buy candidate filter |
 | Sizing | common position allocation |
-| Guard | buy guard와 size haircut |
-| BLOCK Watch | block watch candidate 평가 |
+| Guard | buy guard and size haircut |
+| BLOCK Watch | block watch candidate evaluation |
 | Sell | common backtest sell decision |
 
-다음 항목은 다른 서비스와 연결되므로 명시 요청 없이 변경하지 않는다.
+The following items are connected to other services, so do not change them without an explicit request.
 
-- public 함수명과 import path
-- dataclass 필드와 기본값
-- enum과 상태 문자열
-- reason code와 reason 문구
-- config key와 snapshot 형식
-- common 결과를 daily 형식으로 변환하는 mapping
+- public function names and import paths
+- dataclass fields and default values
+- enums and status strings
+- reason code and reason text
+- config keys and snapshot format
+- the mapping that converts common results into the daily format
 
-공통 모듈 변경이 필요하면 이 저장소만 수정해 해결하지 않는다. 호출부와 공통 모듈의 책임을 분리해 보고한다.
+If a change to the common module is needed, do not resolve it by modifying only this repository. Separate the responsibilities of the caller and the common module and report them.
 
-## 9. Database 규칙
+## 9. Database Rules
 
-- DB 설정은 `db_config.py`의 실제 구현을 기준으로 확인한다.
-- 환경변수 이름, 기본값, 필수값을 추정하지 않는다.
-- password 기본값을 새로 만들지 않는다.
-- 민감정보는 환경변수 또는 local secret loader를 사용한다.
-- `search_path` 순서 변경은 unqualified SQL 해석에 영향을 주므로 계약 변경으로 취급한다.
-- schema-qualified SQL과 search path 기반 SQL을 혼용할 때 대상 schema를 확인한다.
-- column, unique key와 conflict target은 코드와 DDL 근거 없이 추정하지 않는다.
-- SQL 쓰기 변경 전 insert, update, delete, upsert와 transaction 범위를 확인한다.
-- commit과 rollback 위치를 확인하고 부분 저장 가능성을 보고한다.
-- 실제 DB 접속 없이 정적 확인만 한 경우 AS-IS 검증 완료로 표현하지 않는다.
+- Confirm the DB configuration based on the actual implementation of `db_config.py`.
+- Do not assume environment variable names, defaults, or required values.
+- Do not create a new default for the password.
+- Use environment variables or a local secret loader for sensitive information.
+- Changing the `search_path` order affects unqualified SQL resolution, so treat it as a contract change.
+- When mixing schema-qualified SQL and search-path-based SQL, confirm the target schema.
+- Do not assume columns, unique keys, and conflict targets without a basis in code and DDL.
+- Before an SQL write change, confirm the insert, update, delete, upsert, and transaction scope.
+- Confirm the commit and rollback locations and report the possibility of a partial store.
+- When only a static check without an actual DB connection was performed, do not express it as completed AS-IS validation.
 
-## 10. 실행과 운영 안전
+## 10. Execution and Operational Safety
 
-사용자가 명시하지 않은 경우 아래 작업은 금지한다.
+Unless the user explicitly specifies otherwise, the following work is prohibited.
 
-| 금지 작업 | 이유 |
+| Prohibited Work | Reason |
 |---|---|
-| `daily_buy_signal_run.py` 실행 | signal과 run 데이터가 생성·갱신될 수 있음 |
-| `daily_position_signal_run.py` 실행 | position decision과 state가 갱신될 수 있음 |
-| `backtest_decision_run.py` 실행 | DB feature 조회가 발생함 |
-| `daily_validator.py` 실행 | DB 조회와 민감정보 출력 가능성이 있음 |
-| backtest 또는 research 실행 | 연구 데이터와 DB 접근 영향이 있음 |
-| DB DDL·DML | 운영 계약과 데이터 변경 위험 |
-| execution order 생성 | StrategyExecution 후속 흐름에 영향 |
-| broker 주문·취소 | 실제 주문 영향 |
-| Crawler와 Preprocessor 실행 | upstream 데이터 변경 위험 |
-| 외부 API 호출 | 네트워크와 외부 시스템 영향 |
-| AWS CLI·SDK 실행 | ECS, Step Functions와 운영 자원 영향 |
-| Scheduler 변경 | 자동 실행 시각과 운영 흐름 영향 |
-| Slack 전송 | 운영 알림 오발송 위험 |
+| Running `daily_buy_signal_run.py` | signal and run data may be created/updated |
+| Running `daily_position_signal_run.py` | position decision and state may be updated |
+| Running `backtest_decision_run.py` | a DB feature query occurs |
+| Running `daily_validator.py` | DB queries and possible sensitive information output |
+| Running backtest or research | affects research data and DB access |
+| DB DDL/DML | risk of operational contract and data change |
+| execution order generation | affects the StrategyExecution downstream flow |
+| broker order/cancel | actual order impact |
+| Running Crawler and Preprocessor | risk of upstream data change |
+| External API call | network and external system impact |
+| AWS CLI/SDK execution | ECS, Step Functions, and operational resource impact |
+| Scheduler change | affects the automatic execution time and operational flow |
+| Slack send | risk of misdelivered operational notifications |
 
-문서 작업에서는 Python module import도 자동 실행이나 DB 연결 가능성을 확인하기 전에는 수행하지 않는다.
+For documentation work, do not even perform a Python module import before confirming the possibility of automatic execution or a DB connection.
 
-### 10.1 실행 모드 안전 규칙
+### 10.1 Execution Mode Safety Rules
 
-운영 모드와 `--shadow` 모드를 명확히 구분한다.
+Clearly distinguish operational mode from `--shadow` mode.
 
-| 항목 | 기준 |
+| Item | Criterion |
 |---|---|
-| Shadow Transaction | read-only, write count 0 계약 유지 |
-| Shadow 결과 | CloudWatch 구조화 JSON으로 출력 |
-| Shadow 연계 | StrategyExecution·주문 경로에 연결하지 않음 |
-| Family 분리 | 운영 Task Definition과 Shadow Family를 분리 |
-| 운영 Command | `--shadow`를 혼입하지 않음 |
-| Position 기본 | 운영 기본은 v1이며 Shadow v2 검증과 혼동하지 않음 |
+| Shadow Transaction | Maintain the read-only, write count 0 contract |
+| Shadow result | Output as CloudWatch structured JSON |
+| Shadow linkage | Do not connect to the StrategyExecution/order path |
+| Family separation | Separate the operational Task Definition from the Shadow Family |
+| Operational Command | Do not mix in `--shadow` |
+| Position default | The operational default is v1; do not confuse it with Shadow v2 validation |
 
-## 11. 코드 수정 규칙
+## 11. Code Modification Rules
 
-- 사용자의 명시 요청 없이 Python, Dockerfile, requirements와 설정 파일을 수정하지 않는다.
-- 기존 함수 signature, CLI option과 module entrypoint를 유지한다.
-- `python -m port_strategy_decision.xxx` 실행 구조를 깨지 않는다.
-- 원본 Python 파일의 대규모 문자열 치환을 피하고 국소 수정한다.
-- 사용자 변경을 되돌리지 않는다.
-- 추정으로 legacy 파일을 삭제하지 않는다.
-- 파일이 사용되지 않는 것처럼 보여도 import, Docker CMD, wrapper와 외부 호출 증거를 먼저 확인한다.
-- 실패 후 무조건 SUCCESS를 출력하는 흐름을 만들지 않는다.
-- 코드 수정 후에도 운영 실행이 필요한 검증은 수행하지 않고 한계로 남긴다.
+- Do not modify Python, Dockerfile, requirements, and configuration files without an explicit user request.
+- Preserve existing function signatures, CLI options, and module entrypoints.
+- Do not break the `python -m port_strategy_decision.xxx` execution structure.
+- Avoid large-scale string replacement of the original Python files; make localized changes.
+- Do not revert user changes.
+- Do not delete legacy files based on assumption.
+- Even if a file appears unused, first confirm evidence of import, Docker CMD, wrapper, and external calls.
+- Do not create a flow that unconditionally outputs SUCCESS after a failure.
+- Even after a code change, do not perform validation that requires operational execution; leave it as a limitation.
 
-## 12. 테스트와 검증
+## 12. Testing and Validation
 
-테스트가 있다면 DB와 운영 시스템을 격리한 정적·단위 검증을 우선한다.
+If tests exist, prioritize static/unit validation that isolates the DB and operational systems.
 
-| 영역 | 우선 검증 |
+| Area | Priority Validation |
 |---|---|
-| Loader | run date, data date, 누락 feature와 기준일 정합 |
-| Market | market signal과 제한값 mapping |
-| Filter | 경계 점수, 결측과 후보 순서 |
-| Sizing | available cash, exposure, 최대 보유 수와 rounding |
-| BLOCK Watch | BUY 미생성, watch 후보 저장 범위 |
-| Position v1 | stop, hold day, BLOCK과 quality 조건 |
-| Position v2 | 선행 검증과 common sell mapping |
-| Repository | unique key, upsert, delete 범위와 rollback |
-| 재실행 | 동일 기준일 중복과 idempotency |
+| Loader | run date, data date, missing feature, and reference-date consistency |
+| Market | market signal and limit-value mapping |
+| Filter | boundary score, missing values, and candidate order |
+| Sizing | available cash, exposure, max positions, and rounding |
+| BLOCK Watch | no BUY generation, watch candidate storage scope |
+| Position v1 | stop, hold day, BLOCK, and quality conditions |
+| Position v2 | preceding validation and common sell mapping |
+| Repository | unique key, upsert, delete scope, and rollback |
+| Re-run | same-reference-date duplication and idempotency |
 
-검증 원칙:
+Validation principles:
 
-- DB가 필요한 테스트는 connection과 cursor를 mock 또는 fixture로 대체한다.
-- 실제 broker snapshot, 주문과 운영 DB를 사용하지 않는다.
-- 테스트가 import 시 DB나 외부 호출을 수행하는지 먼저 확인한다.
-- 실행하지 못한 테스트를 통과로 기록하지 않는다.
-- 문서만 수정한 경우 문서 형식과 변경 범위만 검증한다.
+- For tests that require the DB, replace the connection and cursor with a mock or fixture.
+- Do not use an actual broker snapshot, orders, or the operational DB.
+- First confirm whether the test performs a DB or external call on import.
+- Do not record a test that could not be run as passed.
+- When only documentation is modified, validate only the document format and change scope.
 
-## 13. AWS와 컨테이너 규칙
+## 13. AWS and Container Rules
 
-- `Dockerfile`의 base image, package path, Common Wheel 설치와 CMD를 실제 파일 기준으로 확인한다.
-- 기본 CMD와 Step Functions command override를 혼동하지 않는다.
-- repository 안의 Dockerfile은 실행 이미지 정의이며 배포 완료 증거가 아니다.
-- ECS RunTask, task definition, ECR image와 Step Functions 상태는 외부 운영 사실로 분리한다.
-- 실제 cluster, task definition ARN, image URI, subnet, security group, IAM role과 secret ARN을 문서에 원문으로 기록하지 않는다.
-- `port_strategy_common`은 vendoring이 아니라 1.0.0 Wheel 설치 구조이며, `.devops/packages/*.whl`은 git-ignore된 빌드 산출물임을 구분해 기록한다.
+- Confirm the `Dockerfile` base image, package path, Common Wheel installation, and CMD based on the actual file.
+- Do not confuse the default CMD with the Step Functions command override.
+- The Dockerfile in the repository is an execution image definition, not evidence of a completed deployment.
+- Treat ECS RunTask, task definition, ECR image, and Step Functions state as external operational facts.
+- Do not record the actual cluster, task definition ARN, image URI, subnet, security group, IAM role, and secret ARN verbatim in documentation.
+- Record that `port_strategy_common` is not vendored but installed as a 1.0.0 Wheel, and that `.devops/packages/*.whl` is a git-ignored build artifact.
 
-### 13.1 DevOps 검증 규칙
+### 13.1 DevOps Validation Rules
 
-| 항목 | 기준 |
+| Item | Criterion |
 |---|---|
-| Source·Image 정합 | Source SHA, Image Tag와 Digest 정합 확인 |
-| PUSH_IMAGE | `false`는 품질 게이트, `true`는 ECR Push 목적으로 구분 |
-| Shadow 실행 | Shadow Standalone 실행과 Shadow State Machine 실행을 구분 |
-| 운영 승격 | Revision 등록과 활성 참조 전환을 구분 |
-| 승격 검증 | 승격·Rollback·재승격 시 관련 State Machine 전체 참조 확인 |
-| E2E 성공 | State Machine 성공, ECS Exit Code 0, 예상 Revision·Image 실행과 로그 확인 |
-| Container 판정 | `EssentialContainerExited` 문자열만으로 실패 판정하지 않고 Exit Code 확인 |
-| 범위 확인 | 운영 E2E에서 Step 8 이후와 주문 경로 미호출 확인 |
-| 결과 구분 | 결과 0건과 검증 실패를 구분 |
-| 실데이터 한계 | 실데이터 미발생 시 로직 동일성 검증 완료로 기록하지 않음 |
+| Source/Image consistency | Confirm the consistency of Source SHA, Image Tag, and Digest |
+| PUSH_IMAGE | Distinguish `false` as the quality gate and `true` as the ECR Push purpose |
+| Shadow execution | Distinguish Shadow Standalone execution from Shadow State Machine execution |
+| Operational promotion | Distinguish Revision registration from active reference transition |
+| Promotion validation | On promotion/Rollback/re-promotion, confirm all references of the related State Machines |
+| E2E success | Confirm State Machine success, ECS Exit Code 0, expected Revision/Image execution, and logs |
+| Container judgment | Do not judge failure by the `EssentialContainerExited` string alone; confirm the Exit Code |
+| Scope confirmation | In the operational E2E, confirm that Step 8 onward and the order path are not called |
+| Result distinction | Distinguish a 0-record result from a validation failure |
+| Real-data limit | When real data does not occur, do not record logic-equivalence validation as complete |
 
-### 13.2 Decision Comparison 규칙
+### 13.2 Decision Comparison Rules
 
-| 항목 | 기준 |
+| Item | Criterion |
 |---|---|
-| Comparator 결과 | `MATCH`, `DIFFERENCE`, `REVIEW_REQUIRED`, `INVALID` 의미를 임의로 변경하지 않음 |
-| 결과 혼동 금지 | `INVALID`와 `REVIEW_REQUIRED`를 같은 의미로 다루지 않음 |
-| INVALID | 정상 Comparison으로 취급하지 않고 Promotion 대상에서 제외 |
-| Evaluator 경계 | 운영 v1과 Shadow v2 구분을 유지 |
-| Candidate Shadow | read-only, write_count=0 계약 유지 |
-| Promotion Command | 운영 Command에 `--shadow`나 Shadow v2를 혼입하지 않음 |
-| DB 영향 | Comparator 수정 시 운영 DB write를 추가하지 않음, 비교 결과를 Decision 판단 결과로 저장하지 않음 |
-| Workflow 변경 | Comparison·Approval·Promotion 변경 시 Candidate Artifact identity와 운영 5개 State Machine 영향을 확인 |
-| 문서 연동 | Comparison 파일 추가·책임 변경 시 `docs/source-file-catalog.md`를 함께 갱신 |
+| Comparator results | Do not arbitrarily change the meaning of `MATCH`, `DIFFERENCE`, `REVIEW_REQUIRED`, `INVALID` |
+| No result confusion | Do not treat `INVALID` and `REVIEW_REQUIRED` as having the same meaning |
+| INVALID | Do not treat it as a normal Comparison and exclude it from Promotion candidacy |
+| Evaluator boundary | Maintain the distinction between operational v1 and Shadow v2 |
+| Candidate Shadow | Maintain the read-only, write_count=0 contract |
+| Promotion Command | Do not mix `--shadow` or Shadow v2 into the operational Command |
+| DB impact | When modifying the Comparator, do not add operational DB writes, and do not store the comparison result as a Decision result |
+| Workflow change | When changing Comparison/Approval/Promotion, confirm the Candidate Artifact identity and the impact on the 5 operational State Machines |
+| Document linkage | When adding a Comparison file or changing its responsibility, update `docs/source-file-catalog.md` together |
 
-## 14. 보안과 민감정보
+## 14. Security and Sensitive Information
 
-- password, token, API key, 계좌번호, webhook URL과 실제 DB 접속정보를 출력하거나 문서화하지 않는다.
-- 발견한 민감정보는 값 자체를 인용하지 않고 존재와 위치만 보고한다.
-- 예시 값은 `[REDACTED]` 또는 명백한 placeholder를 사용한다.
-- broker order number, command id와 execution ARN 전체값을 문서에 남기지 않는다.
-- 로그나 dump에 계좌, 종목별 보유 수량과 주문 정보가 있으면 필요한 최소 사실만 요약한다.
-- 전체 ARN, IAM Role ARN, Policy ARN, Task ARN과 Execution ARN을 기록하지 않는다.
-- AWS Account ID, subnet, security group과 전체 Image Digest를 기록하지 않는다.
-- State Machine Definition 백업 등 로컬 임시 경로를 기록하지 않는다.
-- DevOps 사실은 아래 안전 수준만 사용한다.
+- Do not output or document passwords, tokens, API keys, account numbers, webhook URLs, and actual DB connection information.
+- For discovered sensitive information, do not quote the value itself; report only its existence and location.
+- For example values, use `[REDACTED]` or an obvious placeholder.
+- Do not leave the full value of broker order number, command id, and execution ARN in documentation.
+- If logs or dumps contain account, per-stock holding quantities, and order information, summarize only the minimum necessary facts.
+- Do not record full ARN, IAM Role ARN, Policy ARN, Task ARN, and Execution ARN.
+- Do not record the AWS Account ID, subnet, security group, and full Image Digest.
+- Do not record local temporary paths such as State Machine Definition backups.
+- For DevOps facts, use only the following safe level.
 
-| 허용 항목 | 예 |
+| Allowed Item | Example |
 |---|---|
-| Task Definition | Family와 Revision |
-| State Machine | 이름 |
-| Source | 단축 SHA |
-| Image | Tag와 단축 Digest |
-| 상태 | 성공·실패, Exit Code, Write Count |
+| Task Definition | Family and Revision |
+| State Machine | Name |
+| Source | Short SHA |
+| Image | Tag and short Digest |
+| Status | Success/failure, Exit Code, Write Count |
 
-## 15. 문서 갱신 규칙
+## 15. Documentation Update Rules
 
 ### 15.1 README.md
 
-다음이 바뀐 경우에만 필요한 부분을 갱신한다.
+Update only the necessary parts when the following change.
 
-- 서비스 책임과 다른 MS의 경계
-- 주요 entrypoint와 실행 흐름
-- 입력·출력 table 계약
-- 설정과 환경변수
-- common 의존성과 adapter 구조
-- Docker CMD와 컨테이너 실행 방식
-- 외부 의존성 또는 안전 제약
+- Service responsibilities and boundaries with other MS
+- Primary entrypoints and execution flow
+- Input/output table contracts
+- Configuration and environment variables
+- common dependency and adapter structure
+- Docker CMD and container execution method
+- External dependencies or safety constraints
 
 ### 15.2 CHANGELOG.md
 
-- 실제 변경만 날짜별로 기록한다.
-- 과거 시점의 worklog 생성, 파일 삭제와 DB 외부화 기록은 당시 사실이므로 보존한다.
-- 문서 재정비와 Python 기능 변경을 구분한다.
-- 실제 실행하지 않은 DB, AWS, 주문 검증을 완료로 기록하지 않는다.
-- 반복되는 실행 금지 문장은 날짜별 Security 또는 Notes 표로 짧게 통합할 수 있다.
+- Record only actual changes by date.
+- Preserve past-time records of worklog creation, file deletion, and DB externalization as facts at the time.
+- Distinguish documentation restructuring from Python functional changes.
+- Do not record DB, AWS, or order validation that was not actually executed as complete.
+- Repeated execution-prohibition sentences may be consolidated concisely into a per-date Security or Notes table.
 
 ### 15.3 docs/source-file-catalog.md
 
-다음 변경이 확인되면 관련 행이나 섹션을 함께 갱신한다.
+When the following changes are confirmed, update the related rows or sections together.
 
-| 변경 | 갱신 내용 |
+| Change | Update Content |
 |---|---|
-| 파일 생성·삭제·이름 변경 | 파일 목록과 역할 |
-| entrypoint 변경 | 실행 위험과 호출 관계 |
-| loader·repository 책임 변경 | 입출력과 DB 영향 |
-| common 의존성 변경 | 공통 함수와 adapter 책임 |
-| table·상태 계약 변경 | 주요 입력·출력과 downstream 영향 |
-| Docker·wrapper 변경 | 실행 이미지와 운영 wrapper 역할 |
-| 문서 생성·삭제 | Documents 목록과 역할 |
+| File creation/deletion/rename | File list and roles |
+| entrypoint change | Execution risk and call relationships |
+| loader/repository responsibility change | Input/output and DB impact |
+| common dependency change | Common functions and adapter responsibility |
+| table/status contract change | Primary input/output and downstream impact |
+| Docker/wrapper change | Execution image and operational wrapper role |
+| Document creation/deletion | Documents list and roles |
 
-내부 구현만 바뀌고 파일 책임과 변경 영향이 같으면 catalog를 수정하지 않는다.
-카탈로그는 전체 파일 inventory가 아니라 운영과 유지보수에 중요한 책임 문서로 유지한다.
+If only the internal implementation changes and the file responsibility and change impact are the same, do not modify the catalog.
+The catalog is not a full file inventory but a responsibility document for operationally and maintenance-important items.
 
 ### 15.4 Worklog
 
-- `docs/worklog`와 날짜별 worklog는 새로 만들지 않는다.
-- 과거 CHANGELOG에 남은 worklog 생성 이력은 당시 사실이므로 삭제하지 않는다.
-- 현재 작업 이력은 CHANGELOG에 필요한 핵심 변경만 남긴다.
+- Do not create `docs/worklog` and date-specific worklogs anew.
+- Preserve past worklog-creation history remaining in the CHANGELOG as facts at the time; do not delete it.
+- Leave only the necessary key changes for the current work history in the CHANGELOG.
 
-## 16. 문서 정합성
+## 16. Documentation Consistency
 
-네 문서는 같은 용어와 책임 경계를 사용해야 한다.
+The four documents must use the same terminology and responsibility boundaries.
 
-| 용어 | 기준 |
+| Term | Basis |
 |---|---|
-| 서비스명 | `port_strategy_decision` |
-| 계층명 | Decision |
+| Service name | `port_strategy_decision` |
+| Layer name | Decision |
 | upstream | Preprocessor |
 | downstream | StrategyExecution |
-| 시장 판단 | market decision |
-| 매수 산출물 | daily BUY signal |
-| 차단 시장 | BLOCK |
-| 관찰 산출물 | block watch candidate |
-| 포지션 판단 | HOLD, SELL, SKIP |
-| 기준일 | run date와 data date를 구분 |
-| 저장 방식 | insert, update, delete, upsert를 구체적으로 표기 |
-| 외부 운영 | Scheduler, Step Functions, ECS RunTask를 repository 사실과 분리 |
+| Market decision | market decision |
+| Buy artifact | daily BUY signal |
+| Blocked market | BLOCK |
+| Watch artifact | block watch candidate |
+| Position decision | HOLD, SELL, SKIP |
+| Reference date | Distinguish run date and data date |
+| Storage method | Specifically denote insert, update, delete, upsert |
+| External operations | Separate Scheduler, Step Functions, ECS RunTask from repository facts |
 
-코드에서 확인되지 않은 상태, table, column과 운영 구조를 문서 편의를 위해 추가하지 않는다.
+Do not add states, tables, columns, or operational structures that are not confirmed in code merely for documentation convenience.
 
-## 17. Git 규칙
+## 17. Git Rules
 
-- 작업 전후 사용자 변경을 보존한다.
-- `git status --short`와 `git diff --stat`은 변경 범위 확인에만 사용한다.
-- 가능하면 `git diff --check`로 공백 오류를 확인한다.
-- 명시 요청 없이 `git add`, `commit`, `push`, `reset`, `restore`, `checkout`을 실행하지 않는다.
-- 저장소가 없는 첨부 파일 작업에서는 Git 검증을 수행한 것처럼 보고하지 않는다.
+- Preserve user changes before and after work.
+- Use `git status --short` and `git diff --stat` only to confirm the change scope.
+- Where possible, confirm whitespace errors with `git diff --check`.
+- Do not run `git add`, `commit`, `push`, `reset`, `restore`, `checkout` without an explicit request.
+- For attached-file work without a repository, do not report as if Git validation was performed.
 
-## 18. 완료 조건
+## 18. Completion Conditions
 
-작업 완료 전 아래를 확인한다.
+Confirm the following before completing work.
 
-- 대상 파일만 수정했는가
-- Decision 책임과 다른 MS의 경계를 유지했는가
-- total feature 입력과 strategy 출력 계약을 보존했는가
-- BUY, BLOCK watch, HOLD, SELL과 SKIP 의미를 혼동하지 않았는가
-- v1과 v2 evaluator 차이를 유지했는가
-- common public 계약을 임의로 바꾸지 않았는가
-- DB 쓰기와 재실행 위험을 확인했는가
-- 문서 역할과 용어가 네 문서에서 일치하는가
-- source catalog 갱신 조건에 해당하는지 확인했는가
-- 신규 worklog를 만들지 않았는가
-- 민감정보 원문을 새로 기록하지 않았는가
-- UTF-8 No BOM, 300자 셀과 500자 라인 기준을 지켰는가
-- 실행하지 않은 검증을 성공으로 보고하지 않았는가
+- Were only the target files modified?
+- Were the Decision responsibilities and boundaries with other MS preserved?
+- Were the total feature input and strategy output contracts preserved?
+- Were the meanings of BUY, BLOCK watch, HOLD, SELL, and SKIP not confused?
+- Was the difference between v1 and v2 evaluators preserved?
+- Were the common public contracts not changed arbitrarily?
+- Were the DB write and re-run risks confirmed?
+- Are the document roles and terminology consistent across the four documents?
+- Was it confirmed whether the source catalog update conditions apply?
+- Was no new worklog created?
+- Was no verbatim sensitive information newly recorded?
+- Were UTF-8 No BOM, the 300-character cell, and the 500-character line standards met?
+- Was validation that was not executed not reported as successful?
 
-## 19. 완료 보고
+## 19. Completion Report
 
-완료 보고는 2컬럼 표 중심으로 짧게 작성한다.
+Write the completion report concisely, centered on two-column tables.
 
-| 항목 | 보고 내용 |
+| Item | Report Content |
 |---|---|
-| 변경 파일 | 실제 수정 파일 |
-| 변경 요약 | 책임, 계약과 문서 구조의 핵심 변경 |
-| 검증 결과 | 정적 확인과 실행한 안전 검증 |
-| 미수행 | DB, AWS, signal과 주문 관련 미실행 항목 |
-| 남은 위험 | 코드 대조 또는 운영 확인이 필요한 사항 |
-| 민감정보 | 원문 신규 기록 여부 |
+| Changed files | Actually modified files |
+| Change summary | Key changes to responsibilities, contracts, and document structure |
+| Validation result | Static checks and safe validation performed |
+| Not performed | Unexecuted items related to DB, AWS, signal, and orders |
+| Remaining risk | Items requiring code comparison or operational confirmation |
+| Sensitive information | Whether verbatim was newly recorded |
 
-문서 수정 외 실제 운영 실행은 사용자가 명시적으로 요청하고 승인한 경우에만 수행한다.
+Actual operational execution beyond documentation changes is performed only when the user explicitly requests and approves it.

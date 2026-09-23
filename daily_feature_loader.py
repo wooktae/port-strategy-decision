@@ -1,7 +1,8 @@
-"""daily decision 입력 feature를 조회하는 loader 모듈.
+"""Loader module that queries the input features for daily decisions.
 
-run date/data date를 결정하고 `pre_total_market_daily_feature`,
-`pre_total_stock_daily_feature`, `stock_universe`를 조회한다. DB 연결은 호출자가 열고 닫는다.
+Determines the run date/data date and queries `pre_total_market_daily_feature`,
+`pre_total_stock_daily_feature`, and `stock_universe`. The caller opens and
+closes the DB connection.
 """
 
 import datetime
@@ -80,7 +81,7 @@ def load_stock_features(conn, data_date):
 
 
 def load_daily_features(conn, run_date: Optional[str] = None, data_date: Optional[str] = None):
-    """daily buy signal 생성에 필요한 market/stock feature 묶음을 반환한다."""
+    """Return the bundle of market/stock features needed for daily buy signal generation."""
     resolved_run_date = resolve_run_date(run_date)
     resolved_data_date = resolve_data_date(conn, data_date)
 

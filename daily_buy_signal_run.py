@@ -1,8 +1,10 @@
-"""daily BUY signal 생성 entrypoint.
+"""daily BUY signal generation entrypoint.
 
-전처리 total feature를 읽어 market/filter/sizing, BUY signal 저장, BLOCK watch 저장을 수행한다.
-기본 운영 모드는 DB 쓰기와 run 상태 갱신을 수행한다.
---shadow 모드는 동일 입력과 계산 경로를 사용하되 read-only transaction에서 결과만 JSON으로 출력한다.
+Reads the preprocessing total features and performs market/filter/sizing,
+BUY signal persistence, and BLOCK watch persistence. The default operational
+mode performs DB writes and run status updates. The --shadow mode uses the same
+inputs and calculation path but only prints the results as JSON within a
+read-only transaction.
 """
 
 import argparse
@@ -103,7 +105,7 @@ def apply_daily_buy_toxic_haircut(
     decision,
     run_date,
 ) -> list[dict]:
-    """공통 buy guard/haircut 결과를 daily signal 저장용 position dict에 반영한다."""
+    """Apply the shared buy guard/haircut results to the position dict for daily signal storage."""
     common_market_decision = _to_common_market_decision(decision)
     enriched = []
 
@@ -175,7 +177,7 @@ def _calculate_daily_signal(
     data_date=None,
     daily_run_id: int,
 ):
-    """운영/Shadow가 공유하는 BUY 판단 계산 경로."""
+    """BUY decision calculation path shared by the operational and Shadow modes."""
     features = load_daily_features(
         conn=conn,
         run_date=run_date,
@@ -221,7 +223,7 @@ def _calculate_daily_signal(
 
 
 def run_daily_signal(run_date=None, data_date=None, run_note=None):
-    """daily run을 생성하고 BUY signal 및 BLOCK watch 후보를 DB에 저장한다."""
+    """Create a daily run and persist the BUY signals and BLOCK watch candidates to the DB."""
     conn = get_conn()
     daily_run_id = None
 
@@ -344,7 +346,7 @@ def run_daily_signal(run_date=None, data_date=None, run_note=None):
 
 
 def run_daily_signal_shadow(run_date=None, data_date=None):
-    """운영 DB를 수정하지 않고 BUY/BLOCK Watch 판단 결과를 JSON으로 출력한다."""
+    """Print the BUY/BLOCK Watch decision results as JSON without modifying the operational DB."""
     conn = get_conn()
 
     try:

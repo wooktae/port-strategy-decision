@@ -1,61 +1,61 @@
 # port_strategy_decision
 
-`port_strategy_decision`은 Preprocessor가 생성한 total feature를 읽어 일일 전략 판단을 만드는 Decision 마이크로서비스다.
+`port_strategy_decision` is the Decision microservice that reads the total feature produced by the Preprocessor and generates daily strategy decisions.
 
-시장 상태와 매수 가능 범위를 판단하고, 종목 후보를 필터링해 수량을 계산한다. 또한 활성 포지션을 평가해 HOLD, SELL, SKIP 판단을 생성한다.
+It judges the market state and the allowable buy range, filters stock candidates, and computes quantities. It also evaluates active positions to generate HOLD, SELL, and SKIP decisions.
 
-이 문서는 현재 저장소 파일 구조와 검증된 운영 AS-IS를 설명한다. 2026-07-31에는 승인된 DevOps 범위에서 AWS Shadow Canary와 운영 Step 6·7 E2E를 실행했고, 2026-08-10에는 운영 DB 결과와 Shadow JSON을 자동 비교하는 Decision Comparison과 GitHub `production` 승인 기반 Production Promotion까지 검증했다. Step 8 이후, StrategyExecution과 주문은 실행하지 않았다. 이번 문서 현행화 작업 자체에서는 추가 AWS·DB·주문 실행을 수행하지 않는다.
+This document describes the current repository file structure and the validated operational AS-IS. On 2026-07-31, within the approved DevOps scope, the AWS Shadow Canary and the operational Step 6/7 E2E were executed. On 2026-08-10, the Decision Comparison that automatically compares operational DB results against Shadow JSON, together with the GitHub `production` approval-based Production Promotion, were validated. Step 8 onward, StrategyExecution, and orders were not executed. This documentation update task itself performs no additional AWS, DB, or order execution.
 
-## 1. 서비스 요약
+## 1. Service Summary
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 서비스 | `port_strategy_decision` |
-| 계층 | Daily Decision |
-| 주요 입력 | `pre_total_market_daily_feature`, `pre_total_stock_daily_feature` |
-| 주요 판단 | Market, Buy Filter, Sizing, BUY, BLOCK Watch, HOLD, SELL, SKIP |
-| 주요 출력 | Daily Run, Daily Signal, Block Watch Candidate, Position Decision, Position State |
-| 공통 로직 | `port_strategy_common` 1.0.0 Wheel |
-| 운영 진입점 | `daily_buy_signal_run.py`, `daily_position_signal_run.py` |
-| 실행 모드 | 운영 모드와 read-only `--shadow` Shadow Canary 모드 |
-| Repository | `wooktae/port-strategy-decision`, 기본 브랜치 `main` |
-| CI·배포 | GitHub Actions → CodeBuild → Candidate Shadow → Comparison → `production` 승인 → Production Promotion |
-| 상세 파일 문서 | `docs/source-file-catalog.md` |
+| Service | `port_strategy_decision` |
+| Layer | Daily Decision |
+| Primary input | `pre_total_market_daily_feature`, `pre_total_stock_daily_feature` |
+| Primary decisions | Market, Buy Filter, Sizing, BUY, BLOCK Watch, HOLD, SELL, SKIP |
+| Primary output | Daily Run, Daily Signal, Block Watch Candidate, Position Decision, Position State |
+| Common logic | `port_strategy_common` 1.0.0 Wheel |
+| Operational entrypoints | `daily_buy_signal_run.py`, `daily_position_signal_run.py` |
+| Execution modes | Operational mode and read-only `--shadow` Shadow Canary mode |
+| Repository | `wooktae/port-strategy-decision`, default branch `main` |
+| CI/deployment | GitHub Actions → CodeBuild → Candidate Shadow → Comparison → `production` approval → Production Promotion |
+| Detailed file document | `docs/source-file-catalog.md` |
 
-## 2. 책임 경계
+## 2. Responsibility Boundary
 
-Decision은 feature를 기반으로 판단 결과를 생성하고 저장한다. 원천 수집, feature 생성, 주문 실행과 화면 표시는 다른 계층의 책임이다.
+Decision generates and stores decision results based on features. Source collection, feature generation, order execution, and view presentation are the responsibility of other layers.
 
-### 2.1 Decision이 담당하는 범위
+### 2.1 Scope Owned by Decision
 
-| 영역 | 책임 |
+| Area | Responsibility |
 |---|---|
-| Market | 시장 상태와 노출 한도, 최대 보유 수, 최소 점수·수급 기준 판단 |
-| Buy Filter | 종목 feature를 매수 후보 기준으로 필터링 |
-| Sizing | 후보별 매수 수량과 비중 계산 |
-| Daily Buy | Daily Run과 BUY Signal 생성 및 실행 상태 갱신 |
-| BLOCK Watch | BUY 차단 구간의 관찰 후보 별도 기록 |
-| Position | 활성 포지션의 HOLD, SELL, SKIP 판단 |
-| Adapter | `port_strategy_common` 결과를 daily 저장 형식으로 변환 |
+| Market | Judge the market state and exposure limits, maximum position count, and minimum score/flow criteria |
+| Buy Filter | Filter stock features against buy candidate criteria |
+| Sizing | Compute the buy quantity and weight per candidate |
+| Daily Buy | Generate the Daily Run and BUY Signal and update execution status |
+| BLOCK Watch | Separately record watch candidates during a BUY-blocked regime |
+| Position | Judge HOLD, SELL, and SKIP for active positions |
+| Adapter | Convert `port_strategy_common` results into the daily storage format |
 
-### 2.2 다른 계층이 담당하는 범위
+### 2.2 Scope Owned by Other Layers
 
-| 영역 | 담당 계층 |
+| Area | Owning Layer |
 |---|---|
-| 외부 데이터 수집 | Crawler |
-| raw 데이터 전처리와 total feature 생성 | Preprocessor |
-| execution plan과 주문 요청 구성 | StrategyExecution |
-| broker 주문·체결·잔고·보유 동기화 | MarketConnector |
-| backtest 시나리오와 연구 보고서 | StrategyResearch |
-| 상태 조회와 승인 UI | View |
-| 전체 batch orchestration | EventBridge Scheduler와 Step Functions |
-| 이미지 build, ECR push와 task definition 등록 | 배포 파이프라인 |
+| External data collection | Crawler |
+| raw data preprocessing and total feature generation | Preprocessor |
+| execution plan and order request composition | StrategyExecution |
+| broker order/fill/balance/holding synchronization | MarketConnector |
+| backtest scenarios and research reports | StrategyResearch |
+| status query and approval UI | View |
+| full batch orchestration | EventBridge Scheduler and Step Functions |
+| image build, ECR push, and task definition registration | Deployment pipeline |
 
-Decision이 SELL 판단을 만들더라도 실제 매도 주문을 제출하지 않는다. BUY Signal도 StrategyExecution이 소비하기 전까지는 주문이 아니다.
+Even when Decision produces a SELL decision, it does not submit an actual sell order. A BUY Signal is likewise not an order until StrategyExecution consumes it.
 
-## 3. 핵심 실행 흐름
+## 3. Core Execution Flow
 
-운영 모드는 판단 결과를 DB에 저장한다. `--shadow` 모드는 동일 입력을 read-only로 재사용해 결과만 출력한다. 3.1~3.3은 운영 흐름이고 3.4는 Shadow Canary다.
+Operational mode stores decision results in the DB. `--shadow` mode reuses the same input read-only and only outputs the results. Sections 3.1–3.3 describe the operational flow and 3.4 describes the Shadow Canary.
 
 ### 3.1 Daily Buy Signal
 
@@ -65,23 +65,23 @@ Preprocessor total feature
   → Market Decision
   → Buy Candidate Filter
   → Position Sizing
-  → BUY Signal 또는 BLOCK Watch
-  → Daily Run 상태 갱신
+  → BUY Signal or BLOCK Watch
+  → Daily Run status update
 ```
 
-| 단계 | 주요 파일 |
+| Stage | Primary File |
 |---|---|
-| 진입점 | `daily_buy_signal_run.py` |
-| feature 조회 | `daily_feature_loader.py` |
-| market 판단 | `backtest_market.py` |
-| 후보 필터 | `backtest_filter.py` |
-| 수량 계산 | `backtest_sizing.py` |
-| signal 변환 | `daily_signal_builder.py` |
-| run·signal 저장 | `daily_repository.py` |
-| BLOCK 후보 선별 | `daily_block_watch_builder.py` |
-| BLOCK 후보 저장 | `daily_block_watch_repository.py` |
+| entrypoint | `daily_buy_signal_run.py` |
+| feature load | `daily_feature_loader.py` |
+| market decision | `backtest_market.py` |
+| candidate filter | `backtest_filter.py` |
+| quantity calculation | `backtest_sizing.py` |
+| signal conversion | `daily_signal_builder.py` |
+| run/signal storage | `daily_repository.py` |
+| BLOCK candidate selection | `daily_block_watch_builder.py` |
+| BLOCK candidate storage | `daily_block_watch_repository.py` |
 
-Market이 BLOCK이면 일반 BUY Signal을 만들지 않고 관찰 후보만 별도 저장한다. BLOCK Watch는 주문 우회 경로가 아니라 관찰용 산출물이다.
+When Market is BLOCK, no general BUY Signal is created and only watch candidates are stored separately. Block Watch is a watch artifact, not an order-bypass path.
 
 ### 3.2 Daily Position Signal
 
@@ -90,307 +90,307 @@ Latest completed Daily Run
   + Active Strategy Position
   + Broker Position Snapshot
   + Market·Stock Feature
-  → Position Evaluator v1 또는 v2
+  → Position Evaluator v1 or v2
   → HOLD · SELL · SKIP Decision
-  → Position State 최신 평가 갱신
+  → Position State latest evaluation update
 ```
 
-| 단계 | 주요 파일 |
+| Stage | Primary File |
 |---|---|
-| 진입점 | `daily_position_signal_run.py` |
-| v1 평가 | `daily_position_evaluator.py` |
-| v2 평가 | `daily_position_evaluator_v2.py` |
-| 입력 조회·결과 저장 | `daily_position_repository.py` |
+| entrypoint | `daily_position_signal_run.py` |
+| v1 evaluation | `daily_position_evaluator.py` |
+| v2 evaluation | `daily_position_evaluator_v2.py` |
+| input query/result storage | `daily_position_repository.py` |
 
-v1은 daily 운영 기준을 직접 평가한다. v2는 daily 검증을 먼저 수행한 뒤 `port_strategy_common`의 sell 판단을 재사용해 daily decision 형식으로 변환한다.
+v1 directly evaluates the daily operational criteria. v2 first performs daily validation and then reuses the sell decision from `port_strategy_common`, converting it into the daily decision format.
 
-### 3.3 조회와 보조 진입점
+### 3.3 Query and Auxiliary Entrypoints
 
-| 파일 | 현재 역할 |
+| File | Current Role |
 |---|---|
-| `backtest_decision_run.py` | 단일 일자 feature를 읽어 market, filter, sizing snapshot을 출력하는 보조 진입점 |
-| `daily_validator.py` | 최신 Daily Run과 Signal을 조회해 확인하는 검증 후보 |
+| `backtest_decision_run.py` | Auxiliary entrypoint that reads a single-day feature and outputs a market, filter, and sizing snapshot |
+| `daily_validator.py` | Validation candidate that queries and inspects the latest Daily Run and Signal |
 
-두 파일 모두 DB 조회가 발생할 수 있다. 문서 작업이나 단순 구조 점검 중에는 실행하지 않는다.
+Both files may trigger DB queries. Do not run them during documentation work or simple structure inspection.
 
-### 3.4 Shadow Canary 실행 모드
+### 3.4 Shadow Canary Execution Mode
 
-운영 진입점은 `--shadow` 옵션으로 read-only Shadow Canary 모드를 지원한다.
+The operational entrypoints support a read-only Shadow Canary mode via the `--shadow` option.
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
 | BUY Shadow | `daily_buy_signal_run.py --shadow` |
 | Position Shadow | `daily_position_signal_run.py --shadow --evaluator-version v2` |
-| Transaction | read-only, DB write 차단 |
-| 결과 | write_count=0과 CloudWatch 구조화 JSON |
-| 입력 | 운영과 동일한 run date·data date와 Preprocessor Feature |
-| 주문 연계 | StrategyExecution·주문 경로와 연결하지 않음 |
+| Transaction | read-only, DB write blocked |
+| Result | write_count=0 and CloudWatch structured JSON |
+| Input | Same run date/data date and Preprocessor Feature as operations |
+| Order linkage | Not linked to StrategyExecution/order paths |
 
-운영 Command에는 `--shadow`를 포함하지 않는다. Shadow는 동일 입력과 계산 경로를 재사용하되 결과를 저장하지 않고 JSON으로만 출력한다.
+Do not include `--shadow` in operational Commands. Shadow reuses the same input and computation path but does not store results; it only outputs them as JSON.
 
-## 4. 입력 데이터
+## 4. Input Data
 
-Decision은 원천 데이터를 직접 수집하거나 total feature를 생성하지 않는다.
+Decision does not directly collect source data or generate the total feature.
 
-| 입력 | 사용 목적 |
+| Input | Purpose |
 |---|---|
-| `pre_total_market_daily_feature` | 시장 상태와 시장 단위 제한 판단 |
-| `pre_total_stock_daily_feature` | 종목 필터, sizing과 position 평가 |
-| `stock_universe` | 종목명(company_name) 보강용 LEFT JOIN 대상 |
-| `connector_balance_snapshot` | Position 평가에서 최신 broker snapshot 기준일 확인 |
-| `connector_position_snapshot` | broker 보유 상태 확인 |
-| `strategy_position_state` | 전략 포지션의 최신 상태 확인 |
+| `pre_total_market_daily_feature` | Market state and market-level limit decision |
+| `pre_total_stock_daily_feature` | Stock filter, sizing, and position evaluation |
+| `stock_universe` | LEFT JOIN target for enriching the company name (company_name) |
+| `connector_balance_snapshot` | Confirm the latest broker snapshot reference date in position evaluation |
+| `connector_position_snapshot` | Confirm broker holding state |
+| `strategy_position_state` | Confirm the latest state of the strategy position |
 
-입력 데이터에서는 run date와 data date를 구분한다. Market과 Stock feature가 같은 판단 기준일을 가리키는지 확인해야 하며, 누락값과 실제 0값을 같은 의미로 처리하면 안 된다.
+In input data, run date and data date are distinguished. You must confirm that the Market and Stock feature point to the same decision reference date, and a missing value must not be treated as equivalent to an actual 0 value.
 
-## 5. 출력 데이터
+## 5. Output Data
 
-| 출력 | 의미 |
+| Output | Meaning |
 |---|---|
-| `strategy_daily_run` | Daily Buy 판단 실행 단위와 최종 상태 |
-| `strategy_daily_signal` | BUY 후보와 sizing 결과 |
-| `strategy_block_watch_candidate` | BLOCK 시장의 관찰 후보 |
-| `strategy_daily_position_decision` | 포지션 HOLD, SELL, SKIP 판단 이력 |
-| `strategy_position_state` | 포지션의 최신 평가 상태 |
+| `strategy_daily_run` | Daily Buy decision execution unit and final status |
+| `strategy_daily_signal` | BUY candidates and sizing results |
+| `strategy_block_watch_candidate` | Watch candidates in a BLOCK market |
+| `strategy_daily_position_decision` | HOLD, SELL, SKIP decision history for positions |
+| `strategy_position_state` | Latest evaluated state of a position |
 
-테이블명, 상태값, reason, evaluator version, unique key와 upsert 범위는 downstream 계약과 연결된다. 변경 시 StrategyExecution과 운영 조회 영향까지 함께 확인해야 한다.
+Table names, status values, reasons, evaluator versions, unique keys, and upsert scope are connected to downstream contracts. When changing them, also confirm the impact on StrategyExecution and operational queries.
 
-## 6. 주요 파일 구조
+## 6. Primary File Structure
 
-### 6.1 Daily Buy 계열
+### 6.1 Daily Buy Group
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `daily_buy_signal_run.py` | Market, Filter, Sizing, BUY와 BLOCK Watch를 묶는 진입점 |
-| `daily_feature_loader.py` | run date, data date와 market·stock feature 조회 |
-| `daily_signal_builder.py` | sizing 결과를 Daily Signal 저장 형식으로 변환 |
-| `daily_repository.py` | Daily Run과 Signal 생성·조회·상태 갱신 |
-| `daily_block_watch_builder.py` | BLOCK 구간의 관찰 후보 선별 |
-| `daily_block_watch_repository.py` | Block Watch 후보 저장과 대상 범위 정리 |
+| `daily_buy_signal_run.py` | Entrypoint that ties together Market, Filter, Sizing, BUY, and BLOCK Watch |
+| `daily_feature_loader.py` | Query run date, data date, and market/stock feature |
+| `daily_signal_builder.py` | Convert sizing results into the Daily Signal storage format |
+| `daily_repository.py` | Create, query, and update status for Daily Run and Signal |
+| `daily_block_watch_builder.py` | Select watch candidates during a BLOCK regime |
+| `daily_block_watch_repository.py` | Store Block Watch candidates and clean up the target scope |
 
-### 6.2 Daily Position 계열
+### 6.2 Daily Position Group
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `daily_position_signal_run.py` | 활성 포지션 평가 진입점 |
+| `daily_position_signal_run.py` | Entrypoint for active position evaluation |
 | `daily_position_evaluator.py` | Position Decision v1 |
-| `daily_position_evaluator_v2.py` | Daily 검증과 common sell 재사용 기반 v2 |
-| `daily_position_repository.py` | 포지션·snapshot·feature 조회와 Decision 저장 |
+| `daily_position_evaluator_v2.py` | v2 based on daily validation and common sell reuse |
+| `daily_position_repository.py` | Query position/snapshot/feature and store Decision |
 
-### 6.3 공통 판단 Adapter
+### 6.3 Common Decision Adapters
 
-| 파일 | 역할 |
+| File | Role |
 |---|---|
-| `backtest_market.py` | Common Market 판단을 Decision 형식으로 변환 |
-| `backtest_filter.py` | Common Buy Filter 호출 Adapter |
-| `backtest_sizing.py` | Common Position Allocation 호출 Adapter |
-| `backtest_decision_run.py` | 단일 일자 Decision Snapshot 보조 진입점 |
+| `backtest_market.py` | Convert the Common Market decision into the Decision format |
+| `backtest_filter.py` | Adapter that calls the Common Buy Filter |
+| `backtest_sizing.py` | Adapter that calls Common Position Allocation |
+| `backtest_decision_run.py` | Auxiliary entrypoint for a single-day Decision Snapshot |
 
-전체 파일의 입출력, DB 접근과 변경 영향은 `docs/source-file-catalog.md`에서 관리한다. 작은 helper나 로컬 dump는 운영 책임이 확인되기 전까지 주요 구조로 단정하지 않는다.
+The input/output, DB access, and change impact of all files are managed in `docs/source-file-catalog.md`. Small helpers and local dumps are not assumed to be part of the primary structure until their operational responsibility is confirmed.
 
-## 7. `port_strategy_common` 의존성
+## 7. `port_strategy_common` Dependency
 
-Decision의 핵심 판단 로직 상당 부분은 `port_strategy_common`을 재사용한다.
+A significant portion of Decision's core decision logic reuses `port_strategy_common`.
 
-| 영역 | 주요 계약 |
+| Area | Primary Contract |
 |---|---|
-| Config | Strategy Name, Engine Version, Market·Filter·Sizing 설정과 Snapshot |
-| Market | Market Context와 Market Decision |
+| Config | Strategy Name, Engine Version, Market/Filter/Sizing settings and Snapshot |
+| Market | Market Context and Market Decision |
 | Buy Filter | Buy Candidate Filter |
 | Sizing | Position Allocation |
-| Guard | Buy Guard와 Size Haircut |
-| BLOCK Watch | Block Watch Candidate 평가 |
+| Guard | Buy Guard and Size Haircut |
+| BLOCK Watch | Block Watch Candidate evaluation |
 | Sell | Common Backtest Sell Decision |
 
-현재 문서에서 확인되는 주요 사용 관계는 다음과 같다.
+The primary usage relationships confirmed in the current documentation are as follows.
 
-| 파일 | Common 사용 |
+| File | Common Usage |
 |---|---|
 | `backtest_market.py` | `common_decide_market` |
 | `backtest_filter.py` | `common_filter_buy_candidates` |
 | `backtest_sizing.py` | `common_allocate_positions` |
 | `daily_buy_signal_run.py` | Buy Guard, Size Haircut, Safe Float |
-| `daily_block_watch_builder.py` | Block Watch Candidate 평가 |
+| `daily_block_watch_builder.py` | Block Watch Candidate evaluation |
 | `daily_position_evaluator_v2.py` | `common_evaluate_backtest_sell` |
 
-Public 함수명, dataclass 필드, enum, config key와 reason 문자열은 다른 서비스와 연결될 수 있다. Decision 단독 판단으로 변경하지 않는다.
+Public function names, dataclass fields, enums, config keys, and reason strings may be connected to other services. Do not change them based on a Decision-only decision.
 
-## 8. AWS Paper Daily 위치
+## 8. AWS Paper Daily Position
 
-Decision은 AWS Paper Daily에서 판단 단계로 사용된다. Scheduler, Step Functions state와 Lambda 세부 구현은 각 담당 저장소가 관리한다.
+Decision is used as a decision stage within AWS Paper Daily. The detailed implementation of the Scheduler, Step Functions states, and Lambdas is managed by each owning repository.
 
-| Daily 단계 | Decision 역할 |
+| Daily Stage | Decision Role |
 |---|---|
-| Step 6 · Daily Buy Signal | total feature를 읽어 Market, Filter, Sizing, BUY 또는 BLOCK Watch 결과 저장 |
-| Step 7 · Position Signal | 활성 포지션을 읽어 HOLD, SELL, SKIP Decision 저장 |
+| Step 6 · Daily Buy Signal | Read the total feature and store the Market, Filter, Sizing, BUY, or BLOCK Watch result |
+| Step 7 · Position Signal | Read active positions and store the HOLD, SELL, SKIP Decision |
 
 ### 8.1 Step 6
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 진입점 | `daily_buy_signal_run.py` |
-| 입력 | Market·Stock Total Feature, Universe와 판단 설정 |
-| 출력 | Daily Run, Daily Signal 또는 Block Watch Candidate |
-| 직접 하지 않는 일 | Execution Plan 생성, 주문 요청과 broker 주문 제출 |
+| entrypoint | `daily_buy_signal_run.py` |
+| Input | Market/Stock Total Feature, Universe, and decision settings |
+| Output | Daily Run, Daily Signal, or Block Watch Candidate |
+| Not done directly | Execution Plan generation, order requests, and broker order submission |
 
 ### 8.2 Step 7
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 진입점 | `daily_position_signal_run.py` |
-| 입력 | Latest Completed Run, Active Position, Broker Snapshot, Feature |
-| 출력 | Position Decision과 Position State 최신 평가 |
-| 직접 하지 않는 일 | 매도 주문 요청 생성과 broker 주문 제출 |
+| entrypoint | `daily_position_signal_run.py` |
+| Input | Latest Completed Run, Active Position, Broker Snapshot, Feature |
+| Output | Position Decision and Position State latest evaluation |
+| Not done directly | Sell order request generation and broker order submission |
 
 ### 8.3 Shadow Canary
 
-Shadow Canary는 운영과 분리된 read-only 검증 경로다. 운영 BUY·Position Family와 별도의 Shadow Family를 사용한다.
+Shadow Canary is a read-only validation path separated from operations. It uses a dedicated Shadow Family separate from the operational BUY/Position Family.
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| BUY Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
-| Position Shadow Family | 운영과 분리된 전용 ECS Task Definition Family |
-| BUY Shadow Command | 운영 진입점에 `--shadow` 추가 |
+| BUY Shadow Family | Dedicated ECS Task Definition Family separated from operations |
+| Position Shadow Family | Dedicated ECS Task Definition Family separated from operations |
+| BUY Shadow Command | `--shadow` added to the operational entrypoint |
 | Position Shadow Command | `--shadow --evaluator-version v2` |
-| 실행 순서 | BUY Shadow → Position Shadow 순차 |
-| 저장 계약 | read-only, write_count=0 |
-| 결과 | CloudWatch 구조화 JSON |
-| 주문 연계 | StrategyExecution·주문 경로와 분리 |
+| Execution order | BUY Shadow → Position Shadow, sequential |
+| Storage contract | read-only, write_count=0 |
+| Result | CloudWatch structured JSON |
+| Order linkage | Separated from StrategyExecution/order paths |
 
-현재 Production Promotion Workflow는 Candidate Image로 Shadow Family의 신규 Revision을 등록하고, GitHub Workflow가 ECS RunTask로 BUY Shadow와 Position Shadow를 직접 실행한다. 별도의 `portfolio-paper-decision-shadow-canary` State Machine은 기존 Shadow 검증 자원으로 존재하지만 현재 Promotion Workflow의 Candidate 실행 주체는 아니다. Candidate 실행에서 생성되는 일회성 Shadow Revision 번호는 문서에 고정값으로 기록하지 않는다.
+The current Production Promotion Workflow registers a new Revision of the Shadow Family with the Candidate Image, and the GitHub Workflow runs BUY Shadow and Position Shadow directly via ECS RunTask. A separate `portfolio-paper-decision-shadow-canary` State Machine exists as an existing Shadow validation resource but is not the Candidate execution agent in the current Promotion Workflow. The one-time Shadow Revision number created during Candidate execution is not recorded as a fixed value in documentation.
 
-### 8.4 운영 승격과 Rollback
+### 8.4 Operational Promotion and Rollback
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 승격 대상 | 운영 BUY·Position Task Definition |
-| 운영 Command | Shadow 옵션 없음, 기존 운영 로직 유지 |
-| BUY 운영 Command | `daily_buy_signal_run` |
-| Position 운영 Command | 기본 v1 `daily_position_signal_run` |
-| Promotion Image | 승인된 동일 Candidate Image를 재빌드 없이 사용 |
-| Candidate Image Tag | Git SHA 기반 `a01d90592a7c` |
-| 참조 State Machine | Decision Revision을 참조하는 5개 운영 State Machine |
-| 전환 기준 | 기존 운영 `:3` 기준에서 신규 Revision 등록·전환, 이전 `:3` 참조 제거 확인 |
+| Promotion target | Operational BUY/Position Task Definition |
+| Operational Command | No Shadow option, existing operational logic retained |
+| BUY operational Command | `daily_buy_signal_run` |
+| Position operational Command | Default v1 `daily_position_signal_run` |
+| Promotion Image | Uses the approved identical Candidate Image without rebuild |
+| Candidate Image Tag | Git SHA-based `a01d90592a7c` |
+| Referencing State Machines | 5 operational State Machines that reference the Decision Revision |
+| Transition basis | Register/transition a new Revision from the existing operational `:3` baseline, and confirm removal of the previous `:3` reference |
 
-2026-07-31에는 `:2`→`:3` 승격, `:3`→`:2` Rollback, `:2`→`:3` 재승격으로 Rollback 경로를 검증했다. 2026-08-10 최종 Production Promotion은 승인된 Candidate Image를 기존 운영 `:3` 기준에서 신규 Revision으로 등록하고 5개 운영 State Machine 참조를 전환한 뒤 이전 `:3` 참조 제거를 검증했다. 실제 현재 운영 Revision 번호는 라이브 AWS 상태로 확인하며 문서에 고정값으로 추정 기록하지 않는다.
+On 2026-07-31, the Rollback path was validated by `:2`→`:3` promotion, `:3`→`:2` Rollback, and `:2`→`:3` re-promotion. The final Production Promotion on 2026-08-10 registered the approved Candidate Image as a new Revision from the existing operational `:3` baseline, transitioned the references of the 5 operational State Machines, and then validated removal of the previous `:3` reference. The actual current operational Revision number is confirmed from the live AWS state and is not recorded in documentation as a presumed fixed value.
 
-### 8.5 운영 Step 6·7 E2E 현황
+### 8.5 Operational Step 6/7 E2E Status
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| BUY E2E | Step 6 전용 State Machine 실행 SUCCEEDED |
-| Position E2E | Step 7 전용 State Machine 실행 SUCCEEDED |
-| 실행 Revision | 운영 BUY·Position Revision `:3` |
-| Container | 두 실행 모두 Exit Code 0 |
-| Image | 예상 Tag·Digest 일치 |
-| 로그 | CloudWatch 확인, 오류 패턴 0건 |
-| 실행 범위 | Step 6·7만 실행, Step 8 이후·StrategyExecution·주문 미실행 |
+| BUY E2E | Step 6 dedicated State Machine execution SUCCEEDED |
+| Position E2E | Step 7 dedicated State Machine execution SUCCEEDED |
+| Executed Revision | Operational BUY/Position Revision `:3` |
+| Container | Both executions Exit Code 0 |
+| Image | Expected Tag/Digest match |
+| Log | CloudWatch confirmed, 0 error patterns |
+| Execution scope | Only Step 6/7 executed; Step 8 onward, StrategyExecution, and orders not executed |
 
-이 E2E는 Decision 단계까지의 검증이며 전체 Paper Daily Step 1~17이나 주문 체결 검증이 아니다. 실행 당시 입력이 BLOCK이고 Position이 0건이어서 결과는 0건이며, 이는 검증 실패가 아니라 입력 조건에 따른 정상 결과다.
+This E2E is validation up to the Decision stage; it is not the full Paper Daily Step 1–17 or order fill validation. At execution time the input was BLOCK and there were 0 positions, so the result was 0 records; this is not a validation failure but a normal result given the input conditions.
 
-실제 cluster, task definition ARN, image URI, subnet, security group, command id와 credential은 README에 기록하지 않는다.
+The actual cluster, task definition ARN, image URI, subnet, security group, command id, and credentials are not recorded in the README.
 
 ### 8.6 Decision Comparison
 
-2026-08-10에 운영 DB 결과와 Shadow CloudWatch JSON을 자동 비교하는 Decision Comparison이 실데이터로 수행됐다.
+On 2026-08-10, the Decision Comparison that automatically compares operational DB results against the Shadow CloudWatch JSON was performed with real data.
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 비교 주체 | `decision_comparator.py` |
-| ECS 실행 wrapper | `decision_comparison_ecs_run.py` |
-| 비교 대상 | 운영 Daily Run 결과(BUY·Position)와 Shadow JSON |
-| DB 영향 | 운영 DB read-only 조회, Decision 결과 신규 저장 없음 |
-| 결과 4종 | MATCH, DIFFERENCE, REVIEW_REQUIRED, INVALID |
+| Comparison agent | `decision_comparator.py` |
+| ECS execution wrapper | `decision_comparison_ecs_run.py` |
+| Comparison targets | Operational Daily Run results (BUY/Position) and Shadow JSON |
+| DB impact | Operational DB read-only query, no new Decision result storage |
+| Four result types | MATCH, DIFFERENCE, REVIEW_REQUIRED, INVALID |
 
-| 결과 | 의미 |
+| Result | Meaning |
 |---|---|
-| MATCH | 의미 있는 차이 없음 |
-| DIFFERENCE | 유효하지만 상세 값 차이 |
-| REVIEW_REQUIRED | 판단 변화처럼 사람이 확인해야 하는 차이 |
-| INVALID | 비교 자체를 신뢰할 수 없어 Promotion 대상 아님 |
+| MATCH | No meaningful difference |
+| DIFFERENCE | Valid but with detailed value differences |
+| REVIEW_REQUIRED | A difference that a human must review, such as a decision change |
+| INVALID | The comparison itself cannot be trusted, so not a Promotion candidate |
 
-2026-08-10 실데이터 결과는 Market이 운영·Shadow 모두 BLOCK으로 MATCH, BUY Shadow Signal 0건, Shadow Position Decision 3건, write_count=0이었고 최종 결과는 `REVIEW_REQUIRED`였다. 자동 Comparison이 실데이터 차이를 실제로 탐지해 Review Gate까지 전달했다. 이 차이는 운영 v1과 Shadow v2 차이 및 실행 시점 active position population 차이를 포함하며, Candidate 코드가 운영 판단을 잘못 변경했다는 의미가 아니다. `INVALID`는 정상 Comparison 결과로 취급하지 않고 Promotion을 차단한다.
+The 2026-08-10 real-data result was: Market was BLOCK for both operations and Shadow, hence MATCH; 0 BUY Shadow Signals; 3 Shadow Position Decisions; write_count=0; and the final result was `REVIEW_REQUIRED`. The automatic Comparison actually detected a real-data difference and forwarded it to the Review Gate. This difference includes the operational v1 vs Shadow v2 difference and the active position population difference at execution time, and does not mean that the Candidate code incorrectly changed the operational decision. `INVALID` is not treated as a normal Comparison result and blocks Promotion.
 
-## 9. 컨테이너 이미지와 CI·배포 파이프라인
+## 9. Container Image and CI/Deployment Pipeline
 
-`Dockerfile`은 Decision 실행 이미지를 정의하고, `.devops`와 `.github/workflows`가 CI·배포 경로를 담당한다.
+`Dockerfile` defines the Decision execution image, and `.devops` and `.github/workflows` own the CI/deployment path.
 
-### 9.1 컨테이너 이미지
+### 9.1 Container Image
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
 | Base Image | Python 3.13 slim |
-| 기본 CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
-| Position 실행 | 컨테이너 command override로 `daily_position_signal_run` 지정 |
-| Common 포함 | `port_strategy_common` 1.0.0 Wheel 설치 |
-| 배포 책임 | 별도 배포 파이프라인 |
+| Default CMD | `python -m port_strategy_decision.daily_buy_signal_run` |
+| Position execution | Specify `daily_position_signal_run` via container command override |
+| Common inclusion | Install `port_strategy_common` 1.0.0 Wheel |
+| Deployment responsibility | Separate deployment pipeline |
 
-### 9.2 `port_strategy_common` 설치 구조
+### 9.2 `port_strategy_common` Installation Structure
 
-현재 이미지는 `port_strategy_common`을 vendoring하지 않고 검증된 1.0.0 Wheel을 설치한다.
+The current image does not vendor `port_strategy_common`; it installs the validated 1.0.0 Wheel.
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 패키지 버전 | 1.0.0 |
-| Wheel 준비 | CodeArtifact에서 받아 `.devops/packages`에 배치 |
-| 설치 시점 | Docker Build 시 `--no-deps` 설치 |
-| Wheel 추적 | `.devops/packages/*.whl`은 git-ignore된 빌드 산출물 |
-| 계약 검증 | Decision Consumer 관점의 import·계약 테스트 |
+| Package version | 1.0.0 |
+| Wheel preparation | Fetched from CodeArtifact and placed in `.devops/packages` |
+| Install timing | `--no-deps` install during Docker Build |
+| Wheel tracking | `.devops/packages/*.whl` is a git-ignored build artifact |
+| Contract validation | import/contract test from the Decision Consumer perspective |
 
-CodeArtifact Domain·Repository·endpoint의 전체 식별자는 문서에 기록하지 않는다.
+The full CodeArtifact Domain/Repository/endpoint identifiers are not recorded in documentation.
 
-### 9.3 CI 품질 게이트
+### 9.3 CI Quality Gates
 
-`.devops/codebuild/buildspec.yml`은 아래 품질 게이트를 순서대로 수행한다.
+`.devops/codebuild/buildspec.yml` performs the following quality gates in order.
 
-| 단계 | 내용 |
+| Stage | Content |
 |---|---|
 | Python Compile | `compileall` |
-| Unit·Contract Test | `pytest` (import contract, position evaluator version contract) |
+| Unit/Contract Test | `pytest` (import contract, position evaluator version contract) |
 | Static Analysis | Ruff |
 | Host Import Smoke | `.devops/scripts/container-smoke.py` |
 | Host Entrypoint Smoke | `.devops/scripts/entrypoint-smoke.py` |
-| Docker Build | 이미지 build |
-| Container Import Smoke | 컨테이너 내부 import smoke |
-| Container Entrypoint Smoke | 컨테이너 내부 entrypoint smoke |
-| ECR Push | `PUSH_IMAGE=true`일 때만 수행 |
+| Docker Build | image build |
+| Container Import Smoke | in-container import smoke |
+| Container Entrypoint Smoke | in-container entrypoint smoke |
+| ECR Push | Performed only when `PUSH_IMAGE=true` |
 
-`PUSH_IMAGE=false`는 품질 게이트만 수행하고 push를 건너뛴다. `PUSH_IMAGE=true`는 검증 후 ECR push와 Digest 확인을 수행한다.
+`PUSH_IMAGE=false` performs only the quality gates and skips the push. `PUSH_IMAGE=true` performs ECR push and Digest confirmation after validation.
 
-### 9.4 GitHub Actions와 Release 흐름
+### 9.4 GitHub Actions and Release Flow
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
 | Workflow | `.github/workflows/decision-codebuild.yml` |
-| 트리거 | `workflow_dispatch` |
-| 인증 | GitHub OIDC (main branch trust) |
-| Source | GitHub Commit SHA를 CodeBuild Source Version으로 전달 |
-| 승인 | GitHub `production` Environment manual approval |
+| Trigger | `workflow_dispatch` |
+| Authentication | GitHub OIDC (main branch trust) |
+| Source | Pass the GitHub Commit SHA as the CodeBuild Source Version |
+| Approval | GitHub `production` Environment manual approval |
 
-현재 Workflow는 단순 CodeBuild 트리거가 아니라 아래 흐름을 담당한다.
+The current Workflow is not a simple CodeBuild trigger; it owns the flow below.
 
 ```text
 workflow_dispatch
   → GitHub OIDC
   → Decision CodeBuild (Git SHA Candidate Image)
-  → Candidate BUY/Position Shadow Task Definition 등록
-  → ECS BUY Shadow → Position Shadow 실행
-  → CloudWatch Shadow JSON 수집
-  → ECS Comparator 실행
-  → Comparison Report 수집과 GitHub Job Summary 생성
-  → production Environment 수동 승인
-  → 승인 시 Production Promotion
-  → 운영 BUY/Position 신규 Revision 등록
-  → 운영 5개 State Machine 참조 전환과 검증
+  → Register Candidate BUY/Position Shadow Task Definition
+  → Run ECS BUY Shadow → Position Shadow
+  → Collect CloudWatch Shadow JSON
+  → Run ECS Comparator
+  → Collect Comparison Report and generate GitHub Job Summary
+  → production Environment manual approval
+  → Production Promotion on approval
+  → Register new operational BUY/Position Revision
+  → Transition and validate references of 5 operational State Machines
 ```
 
-Reject 시 Promotion이 실행되지 않으며, `INVALID` Comparison은 승인 단계로 진행하지 못한다. Entrypoint Smoke는 argparse `--help` 경로만 실행하며 DB 연결과 운영 run 함수를 호출하지 않는다. 상세 IAM Policy, OIDC subject 원문, 전체 ARN, subnet, security group, 계정 ID와 실행 ID는 문서에 기록하지 않는다.
+On Reject, Promotion does not run, and an `INVALID` Comparison cannot proceed to the approval stage. Entrypoint Smoke runs only the argparse `--help` path and does not call the DB connection or the operational run functions. Detailed IAM Policy, OIDC subject text, full ARNs, subnet, security group, account ID, and execution ID are not recorded in documentation.
 
-## 10. 실행 방법
+## 10. How to Run
 
-내부 import가 `from port_strategy_decision.xxx import ...` 형식이므로 파일 경로 직접 실행보다 `python -m` 형식을 사용한다.
+Since internal imports use the `from port_strategy_decision.xxx import ...` form, use the `python -m` form rather than running a file path directly.
 
-아래 명령은 실행 형식을 설명하기 위한 예시다. DB 조회와 쓰기가 발생할 수 있으므로 문서 작업 중에는 실행하지 않는다.
+The commands below are examples to illustrate the execution form. Because DB queries and writes may occur, do not run them during documentation work.
 
 ```powershell
 python -m port_strategy_decision.daily_buy_signal_run `
@@ -413,36 +413,36 @@ python -m port_strategy_decision.daily_position_signal_run `
 python -m port_strategy_decision.daily_validator
 ```
 
-`daily_buy_signal_run`은 `--run-date`, `--data-date`, `--note`, `--shadow`를 지원한다. `daily_position_signal_run`은 `--account-no`, `--validate-only`, `--shadow`, `--evaluator-version {v1,v2}`를 지원하며 기본값은 `v1`이다.
+`daily_buy_signal_run` supports `--run-date`, `--data-date`, `--note`, and `--shadow`. `daily_position_signal_run` supports `--account-no`, `--validate-only`, `--shadow`, and `--evaluator-version {v1,v2}`, with a default of `v1`.
 
-| 진입점 | 실행 영향 |
+| Entrypoint | Execution Impact |
 |---|---|
-| `daily_buy_signal_run` | Daily Run, Signal과 Block Watch 데이터 생성·갱신 가능 |
-| `daily_buy_signal_run --shadow` | read-only, DB write 없이 JSON 결과 출력 |
-| `daily_position_signal_run` | Position Decision과 Position State 갱신 가능 |
-| `daily_position_signal_run --shadow` | read-only, DB write 없이 JSON 결과 출력 |
-| `daily_validator` | DB 조회와 데이터 출력 가능 |
-| `backtest_decision_run` | Run 기록은 만들지 않더라도 DB feature 조회 가능 |
+| `daily_buy_signal_run` | Can create/update Daily Run, Signal, and Block Watch data |
+| `daily_buy_signal_run --shadow` | read-only, outputs JSON results without DB write |
+| `daily_position_signal_run` | Can update Position Decision and Position State |
+| `daily_position_signal_run --shadow` | read-only, outputs JSON results without DB write |
+| `daily_validator` | Can query the DB and output data |
+| `backtest_decision_run` | Can query DB features even though it does not create a Run record |
 
-## 11. 설정
+## 11. Configuration
 
-설정은 `port_strategy_common.config`와 로컬 `db_config.py`를 사용한다.
+Configuration uses `port_strategy_common.config` and the local `db_config.py`.
 
-### 11.1 주요 설정 영역
+### 11.1 Primary Configuration Areas
 
-| 설정 | 용도 |
+| Setting | Purpose |
 |---|---|
-| PostgreSQL 연결 | host, port, database, user와 password |
-| Strategy 설정 | Strategy Name과 Engine Version |
-| Market 설정 | 시장 상태와 노출 한도 판단 |
-| Filter 설정 | 매수 후보 기준 |
-| Sizing 설정 | 후보별 비중과 수량 계산 |
-| Decision Run Date | 실행 기준일 override 후보 |
-| Schema 계약 | Feature 입력과 Strategy 출력 테이블 해석 |
+| PostgreSQL connection | host, port, database, user, and password |
+| Strategy settings | Strategy Name and Engine Version |
+| Market settings | Market state and exposure limit decision |
+| Filter settings | Buy candidate criteria |
+| Sizing settings | Weight and quantity calculation per candidate |
+| Decision Run Date | Candidate override for the execution reference date |
+| Schema contract | Interpretation of Feature input and Strategy output tables |
 
-### 11.2 DB 환경변수
+### 11.2 DB Environment Variables
 
-현재 문서와 `db_config.py` 계약은 `INTEREST_DB_*` 계열을 기준으로 한다.
+The current documentation and the `db_config.py` contract are based on the `INTEREST_DB_*` family.
 
 ```powershell
 $env:INTEREST_DB_HOST="localhost"
@@ -452,83 +452,83 @@ $env:INTEREST_DB_USER="postgres"
 $env:INTEREST_DB_PASSWORD="[REDACTED]"
 ```
 
-| 환경변수 | 현재 문서 기준 |
+| Environment Variable | Per Current Documentation |
 |---|---|
-| `INTEREST_DB_HOST` | 기본 `localhost` |
-| `INTEREST_DB_PORT` | 기본 `5433` |
-| `INTEREST_DB_NAME` | 기본 `portfolio` |
-| `INTEREST_DB_USER` | 기본 `postgres` |
-| `INTEREST_DB_PASSWORD` | 기본값 없음, 누락 시 실행 오류 |
+| `INTEREST_DB_HOST` | Default `localhost` |
+| `INTEREST_DB_PORT` | Default `5433` |
+| `INTEREST_DB_NAME` | Default `portfolio` |
+| `INTEREST_DB_USER` | Default `postgres` |
+| `INTEREST_DB_PASSWORD` | No default; execution error if missing |
 
-실제 credential은 환경변수나 local secret loader로 관리한다. password, token, account, webhook URL은 문서와 로그에 원문으로 남기지 않는다.
+Actual credentials are managed via environment variables or a local secret loader. Passwords, tokens, accounts, and webhook URLs are not left verbatim in documentation or logs.
 
 ### 11.3 Search Path
 
-현재 문서 기준 DB connection의 search path는 아래 순서를 사용한다.
+Per the current documentation, the DB connection search path uses the following order.
 
 ```text
 decision, research, preprocessor, execution, connector, reference, legacy, public
 ```
 
-| Schema | 주요 역할 |
+| Schema | Primary Role |
 |---|---|
-| `decision` | Daily Run, Signal과 Position Decision |
+| `decision` | Daily Run, Signal, and Position Decision |
 | `research` | Block Watch Candidate |
-| `preprocessor` | Market·Stock Total Feature |
-| `execution` | 후속 실행 계약 참조 |
-| `connector` | Balance와 Position Snapshot |
-| `reference` | Stock Universe 등 기준 정보 |
-| `legacy`, `public` | 기존 unqualified SQL 호환 |
+| `preprocessor` | Market/Stock Total Feature |
+| `execution` | Downstream execution contract reference |
+| `connector` | Balance and Position Snapshot |
+| `reference` | Reference information such as Stock Universe |
+| `legacy`, `public` | Compatibility with existing unqualified SQL |
 
-`strategy_block_watch_candidate` 사용 때문에 `research` schema가 search path에 포함된다. 순서 변경은 unqualified SQL의 대상 table을 바꿀 수 있으므로 계약 변경으로 취급한다.
+Because of the use of `strategy_block_watch_candidate`, the `research` schema is included in the search path. Changing the order can change the target table of unqualified SQL, so it is treated as a contract change.
 
-## 12. 외부 의존성
+## 12. External Dependencies
 
-| 의존성 | 용도 |
+| Dependency | Purpose |
 |---|---|
 | Python | Runtime |
-| PostgreSQL | Feature 조회와 Decision 저장 |
-| `psycopg2` | PostgreSQL 연결 |
-| `psycopg2.extras` | Row와 Batch 처리 보조 |
-| `port_strategy_common` | Market, Filter, Sizing, Guard와 Sell 공통 판단 |
-| Preprocessor Feature | Decision 입력 |
-| Connector Snapshot | Position 평가 입력 |
-| StrategyExecution | Daily Signal 후속 소비자 |
+| PostgreSQL | Feature query and Decision storage |
+| `psycopg2` | PostgreSQL connection |
+| `psycopg2.extras` | Row and Batch processing support |
+| `port_strategy_common` | Common decisions for Market, Filter, Sizing, Guard, and Sell |
+| Preprocessor Feature | Decision input |
+| Connector Snapshot | Position evaluation input |
+| StrategyExecution | Downstream consumer of the Daily Signal |
 
-Dependency의 정확한 설치 버전과 배포 구성은 `requirements.txt`, Dockerfile과 배포 저장소를 함께 확인한다.
+For the exact installed versions of dependencies and the deployment configuration, check `requirements.txt`, the Dockerfile, and the deployment repository together.
 
-## 13. 상태와 재실행 주의사항
+## 13. State and Re-run Cautions
 
-| 주의사항 | 확인 내용 |
+| Caution | Item to Confirm |
 |---|---|
-| 부분 성공 | 일부 row 저장 후 Run만 성공 처리되지 않는지 확인 |
-| 재실행 | 동일 run date와 data date의 중복·잔존 row 확인 |
-| Transaction | delete, insert, upsert와 상태 갱신의 commit 경계 확인 |
-| Feature 누락 | 누락값을 실제 0값으로 오인하지 않는지 확인 |
-| Position 정합 | Strategy Position과 Broker Position의 ticker·수량 비교 |
-| 상태 문자열 | BUY, BLOCK, HOLD, SELL, SKIP과 reason 의미 유지 |
-| 버전 | Evaluator Version과 Engine Version 보존 |
+| Partial success | Confirm the Run is not marked successful after only some rows are stored |
+| Re-run | Confirm duplicate/residual rows for the same run date and data date |
+| Transaction | Confirm the commit boundary for delete, insert, upsert, and status updates |
+| Missing feature | Confirm a missing value is not mistaken for an actual 0 value |
+| Position consistency | Compare ticker/quantity between the Strategy Position and the Broker Position |
+| Status strings | Preserve the meaning of BUY, BLOCK, HOLD, SELL, SKIP, and reason |
+| Version | Preserve Evaluator Version and Engine Version |
 
-현재 구현이 모든 부분 실패를 자동 차단한다고 README만으로 단정하지 않는다. 실제 변경이나 장애 분석에서는 entrypoint와 repository의 예외 전파, commit과 최종 상태 처리까지 확인해야 한다.
+Do not conclude from the README alone that the current implementation automatically blocks all partial failures. In an actual change or incident analysis, you must confirm the exception propagation, commit, and final status handling in the entrypoint and repository.
 
-## 14. 문서 구조
+## 14. Document Structure
 
-| 문서 | 역할 |
+| Document | Role |
 |---|---|
-| `AGENTS.md` | Kiro 작업 범위, 안전, 데이터 계약과 검증 규칙 |
-| `README.md` | 현재 서비스 구조, 흐름, 실행·설정과 운영 위치 |
-| `CHANGELOG.md` | 주요 변경 이력과 당시 사실 |
-| `docs/source-file-catalog.md` | 운영상 중요한 파일의 역할, 입출력과 변경 영향 |
+| `AGENTS.md` | Kiro work scope, safety, data contracts, and validation rules |
+| `README.md` | Current service structure, flow, execution/configuration, and operational position |
+| `CHANGELOG.md` | Primary change history and facts at the time |
+| `docs/source-file-catalog.md` | Role, input/output, and change impact of operationally important files |
 
-파일 책임, entrypoint, DB 접근, Common 의존성 또는 운영 wrapper가 바뀌면 README와 `docs/source-file-catalog.md`를 함께 확인한다. 날짜별 worklog 문서는 새로 만들지 않는다.
+When file responsibilities, entrypoints, DB access, Common dependencies, or operational wrappers change, check the README and `docs/source-file-catalog.md` together. Do not create new date-specific worklog documents.
 
-## 15. 안전한 검증 범위
+## 15. Safe Validation Scope
 
-문서만 수정한 경우에는 변경 파일과 diff 범위만 확인한다.
+When only documentation is modified, confirm only the changed files and diff scope.
 
 ```powershell
 git status --short
 git diff --stat
 ```
 
-코드 변경 시에도 실제 Daily Signal, Position Signal, backtest, DB 쓰기, 외부 API, AWS와 주문 실행이 없는 검증을 우선한다. 운영 실행이 필요한 검증은 자동 수행하지 않고 남은 검증으로 보고한다.
+Even for code changes, prioritize validation that involves no actual Daily Signal, Position Signal, backtest, DB write, external API, AWS, or order execution. Validation that requires operational execution is not performed automatically and is reported as remaining validation.

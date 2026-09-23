@@ -1,7 +1,8 @@
-"""daily buy signal 실행 결과 저장 repository 모듈.
+"""Repository module that persists daily buy signal execution results.
 
-`strategy_daily_run`과 `strategy_daily_signal`의 생성, 갱신, 조회를 담당한다.
-DB schema/table/unique key/upsert 정책은 운영 계약이므로 문서화 외 변경하지 않는다.
+Responsible for creating, updating, and querying `strategy_daily_run` and
+`strategy_daily_signal`. The DB schema/table/unique key/upsert policy is an
+operational contract, so do not change it beyond documentation.
 """
 
 import json
@@ -34,7 +35,7 @@ def create_or_replace_daily_run(
     run_type: str = "DAILY_SIGNAL",
     run_note: Optional[str] = None,
 ):
-    """동일 run key의 daily run을 RUNNING 상태로 만들고 기존 signal을 정리한다."""
+    """Set the daily run for the same run key to RUNNING status and clear existing signals."""
     config_snapshot = get_config_snapshot()
 
     sql = """
@@ -155,7 +156,7 @@ def update_daily_run_failed(conn, daily_run_id: int, error_message: str):
 
 
 def insert_daily_signal(conn, signal: dict):
-    """`strategy_daily_signal`에 BUY signal 1건을 upsert한다."""
+    """Upsert one BUY signal into `strategy_daily_signal`."""
     sql = """
     INSERT INTO strategy_daily_signal (
         daily_run_id,

@@ -1,7 +1,8 @@
-"""BLOCK 시장 구간의 관찰 후보를 만드는 builder 모듈.
+"""builder module that creates watch candidates during a BLOCK market regime.
 
-BUY signal을 만들지 않고 `port_strategy_common`의 block watch 판단만 호출해
-`strategy_block_watch_candidate` 저장용 dict를 구성한다. DB 접근은 repository가 담당한다.
+It does not create BUY signals; it only calls the block watch decision from
+`port_strategy_common` to build a dict for storing in
+`strategy_block_watch_candidate`. DB access is handled by the repository.
 """
 
 from __future__ import annotations
@@ -37,12 +38,12 @@ def build_block_watch_candidates(
     stock_candidates: list[Any],
 ) -> list[dict[str, Any]]:
     """
-    BLOCK 구간에서 강한 예외 후보를 관찰 대상으로 만든다.
+    Makes strong exception candidates in a BLOCK regime into watch targets.
 
-    주의:
-    - 이 함수는 BUY signal을 만들지 않는다.
-    - 이 함수는 execution order를 만들지 않는다.
-    - 결과는 strategy_block_watch_candidate 저장용이다.
+    Note:
+    - This function does not create BUY signals.
+    - This function does not create execution orders.
+    - The result is for storing in strategy_block_watch_candidate.
     """
 
     if (market_signal or "").upper() != "BLOCK":

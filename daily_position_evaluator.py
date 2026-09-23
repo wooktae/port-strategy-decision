@@ -1,7 +1,8 @@
-"""daily position HOLD/SELL/SKIP v1 판단 모듈.
+"""daily position HOLD/SELL/SKIP v1 decision module.
 
-기존 운영 SELL v1 기준을 daily position decision 저장 형식으로 옮긴다.
-DB 업데이트나 execution order 생성은 하지 않고 decision dict만 반환한다.
+Ports the existing operational SELL v1 criteria into the daily position decision
+storage format. It does not update the DB or create execution orders; it only
+returns a decision dict.
 """
 
 import json
@@ -11,8 +12,8 @@ from typing import Any, Optional
 
 
 # =========================================================
-# Daily Position SELL/HOLD v1 설정값
-# 기존 execution_sell_evaluator.py 운영 SELL v1과 맞춤
+# Daily Position SELL/HOLD v1 configuration values
+# Aligned with the operational SELL v1 in the existing execution_sell_evaluator.py
 # =========================================================
 
 MIN_HOLDING_DAYS_FOR_NORMAL_SELL = 2
@@ -152,12 +153,13 @@ def evaluate_daily_position(
     market_feature: Optional[dict],
 ):
     """
-    Daily Position v1 판단.
+    Daily Position v1 decision.
 
-    기존 execution_sell_evaluator.py 운영 SELL v1과 같은 판단 기준을 사용한다.
-    차이점:
-    - 결과를 strategy_daily_position_decision 저장용 dict로 반환한다.
-    - DB 업데이트/주문 생성은 하지 않는다.
+    Uses the same decision criteria as the operational SELL v1 in the existing
+    execution_sell_evaluator.py.
+    Differences:
+    - Returns the result as a dict for storing in strategy_daily_position_decision.
+    - Does not update the DB or create orders.
     """
 
     decision_date = daily_run["run_date"]
@@ -237,8 +239,8 @@ def evaluate_daily_position(
     detail = None
 
     # -----------------------------------------------------
-    # 0. 데이터/주문 가능성 검증
-    # 기존 execution_sell_evaluator.py와 맞춤
+    # 0. Data / order-feasibility validation
+    # Aligned with the existing execution_sell_evaluator.py
     # -----------------------------------------------------
     if remaining_qty <= 0:
         decision_type = "SKIP"
@@ -265,7 +267,7 @@ def evaluate_daily_position(
         detail = "현재가 또는 진입가가 0 이하라서 SELL 평가 제외"
 
     # -----------------------------------------------------
-    # 1. 손절은 보유일수와 무관하게 최우선
+    # 1. Stop-loss takes top priority regardless of holding days
     # -----------------------------------------------------
     elif expected_pnl_rate <= HARD_STOP_LOSS_RATE:
         decision_type = "SELL"
@@ -274,7 +276,7 @@ def evaluate_daily_position(
         detail = f"평가손익률 {expected_pnl_rate} <= hard stop {HARD_STOP_LOSS_RATE}"
 
     # -----------------------------------------------------
-    # 2. 최소 보유일수 보호
+    # 2. Minimum holding-days protection
     # -----------------------------------------------------
     elif holding_days < MIN_HOLDING_DAYS_FOR_NORMAL_SELL:
         decision_type = "HOLD"
@@ -286,7 +288,7 @@ def evaluate_daily_position(
         )
 
     # -----------------------------------------------------
-    # 3. 최대 보유일수
+    # 3. Maximum holding days
     # -----------------------------------------------------
     elif holding_days >= MAX_HOLDING_DAYS:
         decision_type = "SELL"
@@ -295,7 +297,7 @@ def evaluate_daily_position(
         detail = f"보유일수 {holding_days}일 >= 최대 보유일수 {MAX_HOLDING_DAYS}일"
 
     # -----------------------------------------------------
-    # 4. 시장 BLOCK 조건
+    # 4. Market BLOCK condition
     # -----------------------------------------------------
     elif market_signal == "BLOCK" and expected_pnl_rate < MARKET_BLOCK_KEEP_PROFIT:
         decision_type = "SELL"
@@ -307,7 +309,7 @@ def evaluate_daily_position(
         )
 
     # -----------------------------------------------------
-    # 5. 품질 저하
+    # 5. Quality deterioration
     # -----------------------------------------------------
     elif (
         flow_score < QUALITY_DROP_FLOW_THRESHOLD
@@ -322,7 +324,7 @@ def evaluate_daily_position(
         )
 
     # -----------------------------------------------------
-    # 6. 수익권 포지션은 기본 보유
+    # 6. Profitable positions are held by default
     # -----------------------------------------------------
     elif expected_pnl_rate >= PROFIT_POSITION_RATE:
         decision_type = "HOLD"
@@ -334,7 +336,7 @@ def evaluate_daily_position(
             detail += f" / short_pressure_score 높음: {short_pressure_score}"
 
     # -----------------------------------------------------
-    # 7. 기본 HOLD
+    # 7. Default HOLD
     # -----------------------------------------------------
     else:
         decision_type = "HOLD"

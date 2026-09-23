@@ -1,8 +1,9 @@
-"""daily position decision repository 모듈.
+"""daily position decision repository module.
 
-최신 daily run, active position, broker snapshot, feature를 조회하고
-`strategy_daily_position_decision` 및 `strategy_position_state` latest 평가 값을 갱신한다.
-DB 쓰기가 포함되므로 호출 entrypoint 실행 전 운영 영향 범위를 확인해야 한다.
+Queries the latest daily run, active positions, broker snapshot, and features, and
+updates the latest evaluation values in `strategy_daily_position_decision` and
+`strategy_position_state`. Since it includes DB writes, verify the operational impact
+scope before running a calling entrypoint.
 """
 
 import json
@@ -87,14 +88,15 @@ def get_active_position_states(conn, account_no: Optional[str] = None):
 
 def get_latest_broker_position(conn, account_id, ticker_code):
     """
-    최신 balance snapshot 기준 broker position 조회.
+    Queries the broker position based on the latest balance snapshot.
 
-    중요:
-    - connector_balance.py 실행 결과 현재 보유종목이 0건이면
-      connector_position_snapshot에는 최신 날짜 row가 없을 수 있다.
-    - connector_position_snapshot 자체의 최신 row를 현재 보유로 보면
-      전량 매도된 과거 보유종목을 아직 보유 중으로 착각할 수 있다.
-    - 따라서 최신 connector_balance_snapshot의 as_of_date와 같은 날짜의 position row만 현재 보유로 인정한다.
+    Important:
+    - If the connector_balance.py run results in zero currently held stocks,
+      connector_position_snapshot may have no row for the latest date.
+    - Treating the latest row in connector_position_snapshot itself as the current
+      holding could mistake a fully sold past holding as still being held.
+    - Therefore, only position rows whose date matches the as_of_date of the latest
+      connector_balance_snapshot are recognized as current holdings.
     """
 
     sql = """
@@ -158,7 +160,7 @@ def get_market_feature(conn, data_date):
 
 
 def upsert_daily_position_decision(conn, decision: dict):
-    """`strategy_daily_position_decision`에 HOLD/SELL/SKIP 판단 1건을 upsert한다."""
+    """Upserts a single HOLD/SELL/SKIP decision into `strategy_daily_position_decision`."""
     sql = """
     INSERT INTO strategy_daily_position_decision (
         daily_run_id,
@@ -351,8 +353,9 @@ def upsert_daily_position_decision(conn, decision: dict):
 
 def update_position_state_latest_evaluation(conn, decision: dict):
     """
-    Daily Position Decision 결과를 기존 strategy_position_state latest_*에도 반영.
-    기존 View/Position lifecycle 화면과 호환 목적.
+    Also reflects the Daily Position Decision result into the existing
+    strategy_position_state latest_* fields.
+    Intended for compatibility with the existing View/Position lifecycle screens.
     """
 
     sql = """

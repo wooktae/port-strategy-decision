@@ -41,8 +41,8 @@ def _load_shadow_events(path: Path) -> list[dict]:
         if not line:
             continue
 
-        # CloudWatch 문자열 앞에 일반 로그가 섞여 있어도
-        # JSON object가 포함된 줄만 취한다.
+        # Even if ordinary logs are mixed in before the CloudWatch string,
+        # take only the lines that contain a JSON object.
         start = line.find("{")
         end = line.rfind("}")
 
